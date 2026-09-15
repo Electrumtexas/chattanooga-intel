@@ -5,8 +5,8 @@ delinquency, code enforcement, court filings), stacks distress signals per prope
 leads, and serves a map-based dashboard — fully automated via GitHub Actions, hosted on
 GitHub Pages, no external server.
 
-**Dashboard:** enable GitHub Pages on this repo (Settings → Pages → source: GitHub Actions)
-and it'll deploy from the `deploy` workflow job.
+**Dashboard:** https://electrumtexas.github.io/chattanooga-intel/ (GitHub Pages, deployed by
+the `deploy` workflow job — populates once the `scrape` workflow has run at least once).
 
 ## Status
 
