@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Env / secrets — Register of Deeds credentials etc. arrive as GitHub Secrets,
+# never as a committed file. See CLAUDE.md pending-work list.
+.env
+*.env.local
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Raw scrape cache — default is "don't commit," since most of these are
+# daily-changing HTML/JSON blobs that would just bloat repo history.
+# Per-source exceptions (a source worth caching because it's rate-limited
+# enough that replaying beats re-fetching) get a `!data/raw/<source>/**`
+# override here once Phase 1 reconnaissance confirms which source(s)
+# actually need it — decision + rationale logged in CLAUDE.md.
+data/raw/**
+
+# data/chattanooga.db and dashboard/*.json are NOT ignored — they're the
+# generated, committed, canonical artifacts the GitHub Actions workflow
+# writes back to the repo every run.

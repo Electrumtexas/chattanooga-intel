@@ -1,0 +1,10 @@
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
+pandas>=2.2
+python-dateutil>=2.9
+
+# playwright is NOT included yet — Phase 1 portal reconnaissance will confirm
+# whether any source actually requires JS rendering vs. plain requests+bs4.
+# Add it here (and a `playwright install --with-deps chromium` step to the
+# GitHub Actions workflow) only once that's verified. See CLAUDE.md.

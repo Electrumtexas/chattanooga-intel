@@ -1,0 +1,106 @@
+name: Scrape and deploy
+
+on:
+  schedule:
+    - cron: "0 9 * * *"  # 09:00 UTC = 03:00/04:00 Central, after portals' overnight batch updates
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "How many days back scrapers should search (for backfilling a missed run). Not yet consumed by any scraper — court_records.py will read LOOKBACK_DAYS once Phase 1 is implemented."
+        required: false
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      dashboard_changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r scraper/requirements.txt
+
+      # --- Phase 1: court records — NOT YET IMPLEMENTED ---------------------
+      # Blocked on live portal reconnaissance (TN Case Finder, Civitek OCRS,
+      # hamiltonclerk.com probate, cmpti.hamiltontn.gov tax-sale docket).
+      # scraper/court_records.py currently raises NotImplementedError by
+      # design. Uncomment once that reconnaissance + implementation is done.
+      # - name: Scrape court records
+      #   working-directory: scraper
+      #   env:
+      #     LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '1' }}
+      #   run: python court_records.py
+
+      - name: Scrape tax delinquent (Trustee direct download)
+        working-directory: scraper
+        run: python tax_delinquent.py
+
+      - name: Scrape code enforcement (ChattaData Socrata API)
+        working-directory: scraper
+        run: python code_enforcement.py
+
+      # --- Phase 3 GIS enrichment — NOT YET IMPLEMENTED ----------------------
+      # Blocked on discovering the real ArcGIS endpoint behind
+      # gismaps.hamiltontn.gov. scraper/enrich_assessor.py currently raises
+      # NotImplementedError by design. Uncomment once that's confirmed.
+      # No parcel will have latitude/longitude until this is live, which
+      # means Prospect Mode's map has nothing to plot yet — expected for now.
+      # - name: Enrich parcels via Assessor GIS
+      #   working-directory: scraper
+      #   run: python enrich_assessor.py
+
+      - name: Quality check (fails the build before anything commits)
+        working-directory: scraper
+        run: python quality_check.py
+
+      - name: Build unified leads + dashboard exports
+        working-directory: scraper
+        run: python build_unified.py
+
+      - name: Commit and push if changed
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/chattanooga.db dashboard/*.json
+          if git diff --staged --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Automated scrape $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: scrape
+    if: needs.scrape.outputs.dashboard_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard/
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

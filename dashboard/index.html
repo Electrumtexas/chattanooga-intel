@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chattanooga Intel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<style>
+:root {
+  --bg: #F7F7F9; --surface: #FFFFFF; --surface-2: #F0F1F4;
+  --border: #E3E4E9; --border-strong: #CBCDD6;
+  --text: #14161B; --text-muted: #6B6F7A; --text-faint: #9599A3;
+  --accent: #5B4FE0; --accent-soft: #EDEBFC;
+  --danger: #DC3D43; --danger-soft: #FCEAEA;
+  --warning: #E08A1E; --warning-soft: #FCF1E1;
+  --success: #159862; --success-soft: #E5F6EE;
+  --info: #2F6FED; --info-soft: #E8F0FE;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B0C0F; --surface: #16171C; --surface-2: #1E2027;
+    --border: #292B33; --border-strong: #3A3D48;
+    --text: #F1F2F5; --text-muted: #9599A3; --text-faint: #6B6F7A;
+    --accent: #8B7DFF; --accent-soft: #241F47;
+    --danger: #F1585E; --danger-soft: #3A1A1C;
+    --warning: #F0A63E; --warning-soft: #3A2A12;
+    --success: #34C98B; --success-soft: #123626;
+    --info: #5B93FA; --info-soft: #16233F;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B0C0F; --surface: #16171C; --surface-2: #1E2027;
+  --border: #292B33; --border-strong: #3A3D48;
+  --text: #F1F2F5; --text-muted: #9599A3; --text-faint: #6B6F7A;
+  --accent: #8B7DFF; --accent-soft: #241F47;
+  --danger: #F1585E; --danger-soft: #3A1A1C;
+  --warning: #F0A63E; --warning-soft: #3A2A12;
+  --success: #34C98B; --success-soft: #123626;
+  --info: #5B93FA; --info-soft: #16233F;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 14px; line-height: 1.45;
+}
+.mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+a { color: var(--accent); }
+button { font-family: inherit; font-size: inherit; cursor: pointer; }
+input, select { font-family: inherit; font-size: inherit; }
+
+.app { display: flex; height: 100vh; overflow: hidden; }
+
+/* ---------- Sidebar ---------- */
+.sidebar {
+  width: 232px; flex: none; background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; padding: 16px 12px; gap: 4px; overflow-y: auto;
+}
+.brand { font-weight: 700; font-size: 15px; padding: 4px 8px 14px; letter-spacing: -0.01em; }
+.brand .dot { color: var(--accent); }
+.nav-section-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-faint); padding: 14px 8px 6px; }
+.nav-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border-radius: 8px; color: var(--text-muted); text-decoration: none;
+  border: 1px solid transparent; background: none; width: 100%; text-align: left;
+}
+.nav-item:hover { background: var(--surface-2); color: var(--text); }
+.nav-item.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.nav-item .count { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--text-faint); background: var(--surface-2); border-radius: 10px; padding: 1px 7px; }
+.nav-item.active .count { color: var(--accent); background: var(--surface); }
+.segments-list { display: flex; flex-direction: column; gap: 2px; }
+.segment-item { display: flex; align-items: center; gap: 6px; }
+.segment-item button.seg-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.segment-item button.seg-del { flex: none; opacity: 0; color: var(--text-faint); background: none; border: none; padding: 2px 6px; }
+.segment-item:hover button.seg-del { opacity: 1; }
+.sidebar-spacer { flex: 1; }
+.theme-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted);
+}
+.add-segment-btn { border: 1px dashed var(--border-strong); background: none; color: var(--text-faint); border-radius: 8px; padding: 6px 10px; margin: 4px 8px 0; font-size: 12px; }
+.add-segment-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ---------- Main ---------- */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.topbar { padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.filterbar { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+.filterbar .field { display: flex; flex-direction: column; gap: 3px; }
+.filterbar label { font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.filterbar input[type="text"], .filterbar input[type="number"], .filterbar input[type="date"], .filterbar select {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; padding: 6px 9px; color: var(--text); min-width: 0;
+}
+.filterbar input:focus, .filterbar select:focus { outline: none; border-color: var(--accent); }
+.num-pair { display: flex; align-items: center; gap: 4px; }
+.num-pair input { width: 58px; }
+.chip-toggle { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 7px; padding: 6px 10px; color: var(--text-muted); user-select: none; }
+.chip-toggle.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.source-chips { display: flex; gap: 6px; }
+.search-field input { width: 200px; }
+.reset-btn { border: none; background: none; color: var(--text-faint); padding: 6px 8px; }
+.reset-btn:hover { color: var(--danger); }
+
+.kpi-mode-row { display: flex; align-items: stretch; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); flex-wrap: wrap; }
+.kpi-strip { display: flex; gap: 10px; flex: 1; flex-wrap: wrap; }
+.kpi-tile { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 8px 14px; min-width: 108px; }
+.kpi-tile .label { font-size: 10.5px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+.kpi-tile .value { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 600; margin-top: 2px; }
+.kpi-tile .tiers { display: flex; gap: 6px; margin-top: 4px; }
+.mode-toggle { display: flex; align-items: center; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; height: fit-content; align-self: center; }
+.mode-toggle button { border: none; background: none; padding: 7px 16px; border-radius: 7px; color: var(--text-muted); font-weight: 500; }
+.mode-toggle button.active { background: var(--surface); color: var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+
+.content { flex: 1; overflow: hidden; position: relative; }
+.view { position: absolute; inset: 0; display: none; }
+.view.active { display: flex; }
+
+/* ---------- Prospect mode ---------- */
+#prospect-view { flex-direction: row; }
+#map-wrap { flex: 1.4; position: relative; border-right: 1px solid var(--border); }
+#map { position: absolute; inset: 0; }
+.map-banner {
+  position: absolute; bottom: 12px; left: 12px; right: 12px; z-index: 500;
+  background: var(--surface); border: 1px solid var(--warning); color: var(--text);
+  border-radius: 8px; padding: 8px 12px; font-size: 12.5px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+#prospect-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.select-all-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px 8px; color: var(--text-muted); font-size: 12.5px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.prospect-card { border: 1px solid var(--border); background: var(--surface); border-radius: 10px; padding: 10px 12px; display: flex; gap: 10px; cursor: pointer; }
+.prospect-card:hover { border-color: var(--border-strong); }
+.prospect-card input[type=checkbox] { margin-top: 3px; }
+.prospect-card .body { flex: 1; min-width: 0; }
+.prospect-card .addr-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.prospect-card .addr { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prospect-card .owner { color: var(--text-muted); font-size: 12px; margin-top: 1px; }
+.prospect-card .badges { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+.prospect-card .signal { font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+
+/* ---------- Verify mode ---------- */
+#verify-view { overflow: auto; padding: 0; flex-direction: column; }
+table.verify-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+table.verify-table thead th {
+  position: sticky; top: 0; background: var(--surface); text-align: left; padding: 9px 12px;
+  border-bottom: 1px solid var(--border-strong); color: var(--text-muted); font-weight: 600; white-space: nowrap; cursor: pointer; user-select: none;
+  z-index: 10;
+}
+table.verify-table thead th:hover { color: var(--text); }
+table.verify-table thead th .arrow { color: var(--accent); margin-left: 4px; }
+table.verify-table tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+table.verify-table tbody tr:hover { background: var(--surface-2); cursor: pointer; }
+table.verify-table tbody tr.selected { background: var(--accent-soft); }
+.export-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 11; }
+.pagination-bar { display: flex; align-items: center; gap: 10px; padding: 8px 12px; font-size: 12.5px; color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.pagination-bar .btn { padding: 4px 10px; font-size: 12px; }
+.btn { background: var(--accent); color: white; border: none; border-radius: 7px; padding: 7px 14px; font-weight: 600; }
+.btn:hover { filter: brightness(1.08); }
+.btn.secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------- Shared bits ---------- */
+.badge { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; border: 1px solid transparent; white-space: nowrap; }
+.badge.tier-triple_threat { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+.badge.tier-multi_factor { background: var(--warning-soft); color: var(--warning); border-color: var(--warning); }
+.badge.tier-single_signal { background: var(--info-soft); color: var(--info); border-color: var(--info); }
+.badge.src { background: var(--surface-2); color: var(--text-muted); border-color: var(--border-strong); font-weight: 500; }
+.badge.flag { background: var(--accent-soft); color: var(--accent); }
+.score-num { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-faint); gap: 6px; text-align: center; padding: 20px; }
+.empty-state .big { font-size: 32px; }
+
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.modal { background: var(--surface); border-radius: 12px; max-width: 640px; width: 100%; max-height: 85vh; overflow-y: auto; border: 1px solid var(--border); }
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; padding: 16px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); }
+.modal-header .addr { font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 600; }
+.modal-close { background: none; border: none; color: var(--text-faint); font-size: 20px; line-height: 1; padding: 4px; }
+.modal-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; }
+.modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+.modal-grid .k { font-size: 10.5px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.04em; }
+.modal-grid .v { font-size: 13px; margin-top: 1px; }
+.signal-group h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin: 0 0 8px; }
+.signal-row { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size: 12.5px; display: flex; justify-content: space-between; gap: 10px; }
+.signal-row a { font-size: 11px; }
+
+.leaflet-popup-content { font-family: 'Inter', sans-serif; font-size: 12.5px; }
+
+.hamburger { display: none; }
+@media (max-width: 860px) {
+  .sidebar { position: fixed; z-index: 900; height: 100%; transform: translateX(-100%); transition: transform 0.15s; }
+  .sidebar.open { transform: translateX(0); }
+  .hamburger { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); margin-right: 8px; }
+  .sidebar-scrim { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 899; }
+  .sidebar-scrim.open { display: block; }
+  #prospect-view { flex-direction: column; }
+  #map-wrap { flex: none; height: 45%; border-right: none; border-bottom: 1px solid var(--border); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">Chattanooga <span class="dot">Intel</span></div>
+    <div class="nav-section-label">Leads</div>
+    <div id="nav-list"></div>
+    <div class="nav-section-label">Saved Segments</div>
+    <div class="segments-list" id="segments-list"></div>
+    <button class="add-segment-btn" id="add-segment-btn">+ Save current filters</button>
+    <div class="sidebar-spacer"></div>
+    <button class="theme-toggle" id="theme-toggle">
+      <span id="theme-label">Theme: System</span>
+      <span id="theme-icon">🌓</span>
+    </button>
+  </aside>
+
+  <div class="sidebar-scrim" id="sidebar-scrim"></div>
+  <main class="main">
+    <div class="topbar" style="display:flex; align-items:flex-start; gap:8px;">
+      <button class="hamburger" id="hamburger-btn" aria-label="Open menu">☰</button>
+      <div class="filterbar" id="filterbar" style="flex:1;"></div>
+    </div>
+    <div class="kpi-mode-row">
+      <div class="kpi-strip" id="kpi-strip"></div>
+      <div class="mode-toggle">
+        <button id="mode-prospect" class="active">Prospect Mode</button>
+        <button id="mode-verify">Verify Mode</button>
+      </div>
+    </div>
+    <div class="content">
+      <div id="prospect-view" class="view active">
+        <div id="map-wrap">
+          <div id="map"></div>
+        </div>
+        <div id="prospect-list"></div>
+      </div>
+      <div id="verify-view" class="view">
+        <div class="export-bar">
+          <button class="btn secondary" id="select-all-filtered">Select all filtered</button>
+          <button class="btn secondary" id="clear-selection">Clear selection</button>
+          <span id="selection-count" class="mono" style="color:var(--text-muted); font-size:12.5px;"></span>
+          <span style="flex:1"></span>
+          <button class="btn" id="export-csv">Export CSV</button>
+        </div>
+        <div id="verify-pagination"></div>
+        <div style="overflow:auto; flex: 1; min-height: 0;">
+          <table class="verify-table" id="verify-table">
+            <thead><tr id="verify-head"></tr></thead>
+            <tbody id="verify-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="modal-root"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+(function () {
+"use strict";
+
+const TIER_COLOR = { triple_threat: "#DC3D43", multi_factor: "#E08A1E", single_signal: "#2F6FED" };
+const TIER_LABEL = { triple_threat: "Triple Threat", multi_factor: "Multi-Factor", single_signal: "Single Signal" };
+const SOURCE_LABEL = { court_records: "Court", tax_delinquent: "Tax", code_enforcement: "Code" };
+
+const COMMON_COLUMNS = [
+  { key: "situs_address", label: "Address", mono: true },
+  { key: "city", label: "City" },
+  { key: "zip", label: "Zip", mono: true },
+  { key: "owner_name", label: "Owner" },
+  { key: "owner_type", label: "Owner Type" },
+  { key: "is_absentee", label: "Absentee", fmt: "bool" },
+  { key: "mailing_address", label: "Mailing Address", mono: true },
+  { key: "score", label: "Score", fmt: "score" },
+  { key: "tier", label: "Tier", fmt: "tier" },
+  { key: "sources", label: "Sources", fmt: "sources" },
+  { key: "total_exposure", label: "$ Exposure", mono: true, fmt: "money" },
+  { key: "event_date", label: "Last Event", mono: true },
+  { key: "top_signal", label: "Top Signal" },
+  { key: "completeness_score", label: "Completeness", fmt: "pct" },
+];
+
+const SECTIONS = {
+  overview: {
+    key: "overview", label: "Overview / All Leads", dataUrl: "unified_leads.json",
+    extraColumns: [],
+  },
+  court_records: {
+    key: "court_records", label: "Court Records", dataUrl: "court_records.json",
+    extraColumns: [
+      { key: "case_number", label: "Case #", mono: true },
+      { key: "case_type", label: "Case Type" },
+      { key: "filing_date", label: "Filed", mono: true },
+      { key: "amount", label: "Amount", mono: true, fmt: "money" },
+      { key: "party_names", label: "Parties" },
+      { key: "source_portal", label: "Portal" },
+    ],
+  },
+  tax_delinquent: {
+    key: "tax_delinquent", label: "Tax Delinquent", dataUrl: "tax_delinquent.json",
+    extraColumns: [
+      { key: "tax_year", label: "Tax Year", mono: true },
+      { key: "amount_due", label: "Amount Due", mono: true, fmt: "money" },
+      { key: "status", label: "Status" },
+      { key: "back_tax_indicator", label: "Back Tax" },
+      { key: "mortgage_company", label: "Mortgage Co." },
+    ],
+  },
+  code_enforcement: {
+    key: "code_enforcement", label: "Code Enforcement", dataUrl: "code_enforcement.json",
+    extraColumns: [
+      { key: "case_number", label: "Case #", mono: true },
+      { key: "violation_type", label: "Violation" },
+      { key: "violation_date", label: "Date", mono: true },
+      { key: "status", label: "Status" },
+      { key: "description", label: "Description" },
+    ],
+  },
+};
+const SECTION_ORDER = ["overview", "court_records", "tax_delinquent", "code_enforcement"];
+
+const PAGE_SIZE = 100;
+
+const state = {
+  datasets: {}, meta: null, activeSection: "overview", mode: "prospect",
+  filters: { minScore: "", maxScore: "", sources: new Set(), city: "", zip: "", dateFrom: "", dateTo: "", search: "", entityOnly: false, absenteeOnly: false },
+  selectedIds: new Set(), sortKey: "score", sortDir: "desc", page: 0,
+  map: null, markerLayer: null,
+};
+
+function resetPage() { state.page = 0; }
+
+function paginationBar(totalCount) {
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const page = Math.min(state.page, totalPages - 1);
+  const from = totalCount === 0 ? 0 : page * PAGE_SIZE + 1;
+  const to = Math.min(totalCount, (page + 1) * PAGE_SIZE);
+  return `
+    <div class="pagination-bar">
+      <span>Showing <strong>${from.toLocaleString()}–${to.toLocaleString()}</strong> of <strong>${totalCount.toLocaleString()}</strong></span>
+      <span style="flex:1"></span>
+      <button class="btn secondary" data-page-nav="prev" ${page <= 0 ? "disabled" : ""}>Prev</button>
+      <span class="mono">Page ${page + 1} / ${totalPages}</span>
+      <button class="btn secondary" data-page-nav="next" ${page >= totalPages - 1 ? "disabled" : ""}>Next</button>
+    </div>`;
+}
+function wirePaginationBar(container, totalCount) {
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  container.querySelectorAll("[data-page-nav]").forEach((btn) => btn.addEventListener("click", () => {
+    if (btn.dataset.pageNav === "prev") state.page = Math.max(0, state.page - 1);
+    else state.page = Math.min(totalPages - 1, state.page + 1);
+    renderResults();
+  }));
+}
+
+function fmtMoney(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  return "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+function fmtPct(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  return Math.round(v * 100) + "%";
+}
+function esc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function tierBadge(tier) {
+  if (!tier) return "";
+  return `<span class="badge tier-${esc(tier)}">${esc(TIER_LABEL[tier] || tier)}</span>`;
+}
+function sourceBadges(sources) {
+  if (!sources || !sources.length) return "";
+  return sources.map((s) => `<span class="badge src">${esc(SOURCE_LABEL[s] || s)}</span>`).join(" ");
+}
+function cellValue(row, col) {
+  const raw = row[col.key];
+  switch (col.fmt) {
+    case "money": return fmtMoney(raw);
+    case "pct": return fmtPct(raw);
+    case "bool": return raw === true ? "Yes" : raw === false ? "No" : "—";
+    case "score": return `<span class="score-num">${raw != null ? raw.toFixed(1) : "—"}</span>`;
+    case "tier": return tierBadge(raw);
+    case "sources": return sourceBadges(raw);
+    default: return raw === null || raw === undefined || raw === "" ? "—" : esc(raw);
+  }
+}
+
+async function loadAll() {
+  const entries = await Promise.all(
+    SECTION_ORDER.map((key) => fetch(SECTIONS[key].dataUrl).then((r) => r.json()).catch(() => []))
+  );
+  SECTION_ORDER.forEach((key, i) => { state.datasets[key] = entries[i]; });
+  try { state.meta = await fetch("meta.json").then((r) => r.json()); } catch (e) { state.meta = null; }
+}
+
+function activeData() { return state.datasets[state.activeSection] || []; }
+
+function matchesFilters(row) {
+  const f = state.filters;
+  if (f.minScore !== "" && (row.score == null || row.score < Number(f.minScore))) return false;
+  if (f.maxScore !== "" && (row.score == null || row.score > Number(f.maxScore))) return false;
+  if (f.sources.size > 0) {
+    const rowSources = row.sources || [];
+    let hit = false;
+    for (const s of f.sources) if (rowSources.includes(s)) hit = true;
+    if (!hit) return false;
+  }
+  if (f.city && (row.city || "").toLowerCase() !== f.city.toLowerCase()) return false;
+  if (f.zip && !(row.zip || "").startsWith(f.zip)) return false;
+  if (f.dateFrom && (!row.event_date || row.event_date < f.dateFrom)) return false;
+  if (f.dateTo && (!row.event_date || row.event_date > f.dateTo)) return false;
+  if (f.search) {
+    const needle = f.search.toLowerCase();
+    const hay = `${row.owner_name || ""} ${row.situs_address || ""}`.toLowerCase();
+    if (!hay.includes(needle)) return false;
+  }
+  if (f.entityOnly && !row.is_entity_owner) return false;
+  if (f.absenteeOnly && !row.is_absentee) return false;
+  return true;
+}
+
+function getFiltered() { return activeData().filter(matchesFilters); }
+
+function sortRows(rows) {
+  const key = state.sortKey, dir = state.sortDir === "asc" ? 1 : -1;
+  return rows.slice().sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (av === null || av === undefined) av = "";
+    if (bv === null || bv === undefined) bv = "";
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
+    return String(av).localeCompare(String(bv)) * dir;
+  });
+}
+
+/* ---------------- Sidebar / Nav ---------------- */
+function renderNav() {
+  const nav = document.getElementById("nav-list");
+  nav.innerHTML = SECTION_ORDER.map((key) => {
+    const sec = SECTIONS[key];
+    const count = (state.datasets[key] || []).length;
+    const active = key === state.activeSection ? "active" : "";
+    return `<button class="nav-item ${active}" data-section="${key}"><span>${esc(sec.label)}</span><span class="count">${count.toLocaleString()}</span></button>`;
+  }).join("");
+  nav.querySelectorAll(".nav-item").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.activeSection = btn.dataset.section; resetPage(); renderAll();
+      document.getElementById("sidebar").classList.remove("open");
+      document.getElementById("sidebar-scrim").classList.remove("open");
+    });
+  });
+}
+
+function loadSegments() {
+  try { return JSON.parse(localStorage.getItem("ci_segments") || "[]"); } catch (e) { return []; }
+}
+function saveSegments(list) { try { localStorage.setItem("ci_segments", JSON.stringify(list)); } catch (e) {} }
+
+function renderSegments() {
+  const list = loadSegments();
+  const el = document.getElementById("segments-list");
+  if (!list.length) { el.innerHTML = `<div style="color:var(--text-faint); font-size:12px; padding:4px 8px;">None saved yet</div>`; return; }
+  el.innerHTML = list.map((seg, i) => `
+    <div class="segment-item">
+      <button class="nav-item seg-name" data-idx="${i}">${esc(seg.name)}</button>
+      <button class="seg-del" data-idx="${i}" title="Delete">✕</button>
+    </div>`).join("");
+  el.querySelectorAll(".seg-name").forEach((btn) => btn.addEventListener("click", () => {
+    const seg = loadSegments()[Number(btn.dataset.idx)];
+    if (!seg) return;
+    state.filters = Object.assign(state.filters, seg.filters, { sources: new Set(seg.filters.sources || []) });
+    resetPage();
+    renderAll();
+  }));
+  el.querySelectorAll(".seg-del").forEach((btn) => btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const list2 = loadSegments(); list2.splice(Number(btn.dataset.idx), 1); saveSegments(list2); renderSegments();
+  }));
+}
+
+document.getElementById("add-segment-btn").addEventListener("click", () => {
+  const name = prompt("Name this filter segment:");
+  if (!name) return;
+  const list = loadSegments();
+  const filtersToSave = Object.assign({}, state.filters, { sources: Array.from(state.filters.sources) });
+  list.push({ name, filters: filtersToSave });
+  saveSegments(list);
+  renderSegments();
+});
+
+/* ---------------- Theme ---------------- */
+function applyTheme(mode) {
+  const root = document.documentElement;
+  if (mode === "system") { root.removeAttribute("data-theme"); }
+  else { root.setAttribute("data-theme", mode); }
+  document.getElementById("theme-label").textContent = "Theme: " + mode[0].toUpperCase() + mode.slice(1);
+  try { localStorage.setItem("ci_theme", mode); } catch (e) {}
+}
+document.getElementById("hamburger-btn").addEventListener("click", () => {
+  document.getElementById("sidebar").classList.add("open");
+  document.getElementById("sidebar-scrim").classList.add("open");
+});
+document.getElementById("sidebar-scrim").addEventListener("click", () => {
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("sidebar-scrim").classList.remove("open");
+});
+document.getElementById("theme-toggle").addEventListener("click", () => {
+  const current = (function(){ try { return localStorage.getItem("ci_theme") || "system"; } catch(e){ return "system"; } })();
+  const next = current === "system" ? "light" : current === "light" ? "dark" : "system";
+  applyTheme(next);
+});
+(function initTheme() {
+  let saved = "system";
+  try { saved = localStorage.getItem("ci_theme") || "system"; } catch (e) {}
+  applyTheme(saved);
+})();
+
+/* ---------------- Filter bar ---------------- */
+function uniqueSorted(rows, key) {
+  return Array.from(new Set(rows.map((r) => r[key]).filter(Boolean))).sort();
+}
+
+function renderFilterBar() {
+  const rows = activeData();
+  const cities = uniqueSorted(rows, "city");
+  const f = state.filters;
+  const bar = document.getElementById("filterbar");
+  bar.innerHTML = `
+    <div class="field"><label>Score min/max</label>
+      <div class="num-pair">
+        <input type="number" id="f-min-score" min="0" max="100" placeholder="0" value="${esc(f.minScore)}">
+        <span style="color:var(--text-faint)">–</span>
+        <input type="number" id="f-max-score" min="0" max="100" placeholder="100" value="${esc(f.maxScore)}">
+      </div>
+    </div>
+    <div class="field"><label>Signals</label>
+      <div class="source-chips">
+        ${["court_records", "tax_delinquent", "code_enforcement"].map((s) => `<button type="button" class="chip-toggle ${f.sources.has(s) ? "active" : ""}" data-source="${s}">${SOURCE_LABEL[s]}</button>`).join("")}
+      </div>
+    </div>
+    <div class="field"><label>City</label>
+      <select id="f-city"><option value="">All cities</option>${cities.map((c) => `<option value="${esc(c)}" ${f.city === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>
+    </div>
+    <div class="field"><label>Zip</label><input type="text" id="f-zip" placeholder="37402" value="${esc(f.zip)}" style="width:70px"></div>
+    <div class="field"><label>Date from</label><input type="date" id="f-date-from" value="${esc(f.dateFrom)}"></div>
+    <div class="field"><label>Date to</label><input type="date" id="f-date-to" value="${esc(f.dateTo)}"></div>
+    <div class="field search-field"><label>Search owner / address</label><input type="text" id="f-search" placeholder="Smith, Main St..." value="${esc(f.search)}"></div>
+    <div class="field"><label>&nbsp;</label><button type="button" class="chip-toggle ${f.entityOnly ? "active" : ""}" id="f-entity">Entity owner</button></div>
+    <div class="field"><label>&nbsp;</label><button type="button" class="chip-toggle ${f.absenteeOnly ? "active" : ""}" id="f-absentee">Absentee owner</button></div>
+    <button class="reset-btn" id="f-reset" title="Reset filters">Reset ✕</button>
+  `;
+  const onFilterChange = () => { resetPage(); renderResults(); };
+  document.getElementById("f-min-score").addEventListener("input", (e) => { f.minScore = e.target.value; onFilterChange(); });
+  document.getElementById("f-max-score").addEventListener("input", (e) => { f.maxScore = e.target.value; onFilterChange(); });
+  document.getElementById("f-city").addEventListener("change", (e) => { f.city = e.target.value; onFilterChange(); });
+  document.getElementById("f-zip").addEventListener("input", (e) => { f.zip = e.target.value; onFilterChange(); });
+  document.getElementById("f-date-from").addEventListener("change", (e) => { f.dateFrom = e.target.value; onFilterChange(); });
+  document.getElementById("f-date-to").addEventListener("change", (e) => { f.dateTo = e.target.value; onFilterChange(); });
+  document.getElementById("f-search").addEventListener("input", (e) => { f.search = e.target.value; onFilterChange(); });
+  document.getElementById("f-entity").addEventListener("click", () => { f.entityOnly = !f.entityOnly; renderFilterBar(); onFilterChange(); });
+  document.getElementById("f-absentee").addEventListener("click", () => { f.absenteeOnly = !f.absenteeOnly; renderFilterBar(); onFilterChange(); });
+  bar.querySelectorAll("[data-source]").forEach((btn) => btn.addEventListener("click", () => {
+    const s = btn.dataset.source;
+    if (f.sources.has(s)) f.sources.delete(s); else f.sources.add(s);
+    renderFilterBar(); onFilterChange();
+  }));
+  document.getElementById("f-reset").addEventListener("click", () => {
+    state.filters = { minScore: "", maxScore: "", sources: new Set(), city: "", zip: "", dateFrom: "", dateTo: "", search: "", entityOnly: false, absenteeOnly: false };
+    renderFilterBar(); onFilterChange();
+  });
+}
+
+/* ---------------- KPI strip ---------------- */
+function renderKPI(filtered) {
+  const count = filtered.length;
+  const totalExposure = filtered.reduce((s, r) => s + (r.total_exposure || 0), 0);
+  const avgScore = count ? filtered.reduce((s, r) => s + (r.score || 0), 0) / count : 0;
+  const tiers = { triple_threat: 0, multi_factor: 0, single_signal: 0 };
+  filtered.forEach((r) => { if (tiers[r.tier] !== undefined) tiers[r.tier]++; });
+  const el = document.getElementById("kpi-strip");
+  el.innerHTML = `
+    <div class="kpi-tile"><div class="label">Matching</div><div class="value">${count.toLocaleString()}</div></div>
+    <div class="kpi-tile"><div class="label">Total $ Exposure</div><div class="value">${fmtMoney(totalExposure)}</div></div>
+    <div class="kpi-tile"><div class="label">Avg Score</div><div class="value">${avgScore.toFixed(1)}</div></div>
+    <div class="kpi-tile"><div class="label">Tier Breakdown</div><div class="tiers">
+      <span class="badge tier-triple_threat">${tiers.triple_threat}</span>
+      <span class="badge tier-multi_factor">${tiers.multi_factor}</span>
+      <span class="badge tier-single_signal">${tiers.single_signal}</span>
+    </div></div>
+  `;
+}
+
+/* ---------------- Prospect mode ---------------- */
+function ensureMap() {
+  if (state.map) return;
+  state.map = L.map("map").setView([35.0456, -85.3097], 11);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(state.map);
+  state.markerLayer = L.markerClusterGroup({
+    iconCreateFunction: function (cluster) {
+      const markers = cluster.getAllChildMarkers();
+      let worst = "single_signal";
+      markers.forEach((m) => {
+        const t = m.options.tierValue;
+        if (t === "triple_threat") worst = "triple_threat";
+        else if (t === "multi_factor" && worst !== "triple_threat") worst = "multi_factor";
+      });
+      const color = TIER_COLOR[worst];
+      return L.divIcon({
+        html: `<div style="background:${color};color:#fff;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;font-weight:600;font-family:'JetBrains Mono',monospace;font-size:12px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.35)">${markers.length}</div>`,
+        className: "", iconSize: [36, 36],
+      });
+    },
+  });
+  state.map.addLayer(state.markerLayer);
+}
+
+function renderProspect(filtered) {
+  ensureMap();
+  state.markerLayer.clearLayers();
+  const withCoords = filtered.filter((r) => r.latitude != null && r.longitude != null);
+
+  const mapWrap = document.getElementById("map-wrap");
+  let banner = document.getElementById("map-banner");
+  if (withCoords.length === 0) {
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "map-banner"; banner.className = "map-banner";
+      mapWrap.appendChild(banner);
+    }
+    banner.innerHTML = `<strong>0 of ${filtered.length.toLocaleString()}</strong> filtered leads have resolved coordinates yet. GIS parcel enrichment (Assessor lat/long lookup) hasn't run yet — see CLAUDE.md pending work. The list on the right still works.`;
+  } else if (banner) {
+    banner.remove();
+  }
+
+  withCoords.forEach((row) => {
+    const color = TIER_COLOR[row.tier] || TIER_COLOR.single_signal;
+    const marker = L.circleMarker([row.latitude, row.longitude], {
+      radius: 7, color: "#fff", weight: 1.5, fillColor: color, fillOpacity: 0.9, tierValue: row.tier,
+    });
+    marker.bindPopup(`<strong>${esc(row.situs_address || "")}</strong><br>${esc(row.owner_name || "")}<br>Score ${row.score != null ? row.score.toFixed(1) : "—"} · ${esc(TIER_LABEL[row.tier] || "")}`);
+    marker.on("click", () => openDetail(row));
+    state.markerLayer.addLayer(marker);
+  });
+
+  const list = document.getElementById("prospect-list");
+  if (!filtered.length) {
+    list.innerHTML = `<div class="empty-state"><div class="big">∅</div>No leads match the current filters.</div>`;
+    return;
+  }
+  // Map markers plot every filtered lead with coordinates; the card list
+  // below is paginated (large filtered sets were slow to render as one
+  // long DOM list — 12k+ leads is a realistic size for this dataset).
+  const rows = sortRows(filtered);
+  const pageRows = rows.slice(state.page * PAGE_SIZE, (state.page + 1) * PAGE_SIZE);
+  const allChecked = rows.length > 0 && rows.every((r) => state.selectedIds.has(r.id));
+  list.innerHTML = `
+    <div class="select-all-row">
+      <input type="checkbox" id="select-all-prospect" ${allChecked ? "checked" : ""}>
+      <span>Select all ${rows.length.toLocaleString()} filtered</span>
+    </div>
+    ${paginationBar(rows.length)}
+    ${pageRows.map((r) => `
+      <div class="prospect-card" data-id="${esc(r.id)}">
+        <input type="checkbox" class="row-check" data-id="${esc(r.id)}" ${state.selectedIds.has(r.id) ? "checked" : ""}>
+        <div class="body">
+          <div class="addr-row"><span class="addr">${esc(r.situs_address || "Unresolved address")}</span><span class="score-num">${r.score != null ? r.score.toFixed(1) : "—"}</span></div>
+          <div class="owner">${esc(r.owner_name || "Unknown owner")}${r.is_absentee ? " · absentee" : ""}${r.is_entity_owner ? " · entity" : ""}</div>
+          <div class="badges">${tierBadge(r.tier)} ${sourceBadges(r.sources)}</div>
+          <div class="signal">${esc(r.top_signal || "")}</div>
+        </div>
+      </div>`).join("")}
+  `;
+  wirePaginationBar(list, rows.length);
+  list.querySelectorAll(".prospect-card").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.classList.contains("row-check")) return;
+      const row = pageRows.find((r) => r.id === card.dataset.id);
+      if (row) openDetail(row);
+    });
+  });
+  list.querySelectorAll(".row-check").forEach((cb) => {
+    cb.addEventListener("click", (e) => e.stopPropagation());
+    cb.addEventListener("change", () => {
+      if (cb.checked) state.selectedIds.add(cb.dataset.id); else state.selectedIds.delete(cb.dataset.id);
+      renderSelectionCount();
+    });
+  });
+  const selectAll = document.getElementById("select-all-prospect");
+  if (selectAll) selectAll.addEventListener("change", () => {
+    rows.forEach((r) => { if (selectAll.checked) state.selectedIds.add(r.id); else state.selectedIds.delete(r.id); });
+    renderProspect(filtered);
+    renderSelectionCount();
+  });
+}
+
+/* ---------------- Verify mode ---------------- */
+function activeColumns() {
+  return COMMON_COLUMNS.concat(SECTIONS[state.activeSection].extraColumns || []);
+}
+
+function renderVerify(filtered) {
+  const cols = activeColumns();
+  const head = document.getElementById("verify-head");
+  head.innerHTML = `<th style="width:28px"></th>` + cols.map((c) => {
+    const arrow = state.sortKey === c.key ? `<span class="arrow">${state.sortDir === "asc" ? "↑" : "↓"}</span>` : "";
+    return `<th data-key="${c.key}">${esc(c.label)}${arrow}</th>`;
+  }).join("");
+  head.querySelectorAll("th[data-key]").forEach((th) => th.addEventListener("click", () => {
+    const key = th.dataset.key;
+    if (state.sortKey === key) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+    else { state.sortKey = key; state.sortDir = "desc"; }
+    resetPage();
+    renderResults();
+  }));
+
+  const rows = sortRows(filtered);
+  const pageRows = rows.slice(state.page * PAGE_SIZE, (state.page + 1) * PAGE_SIZE);
+  const pager = document.getElementById("verify-pagination");
+  pager.innerHTML = paginationBar(rows.length);
+  wirePaginationBar(pager, rows.length);
+
+  const body = document.getElementById("verify-body");
+  if (!rows.length) {
+    body.innerHTML = `<tr><td colspan="${cols.length + 1}"><div class="empty-state"><div class="big">∅</div>No leads match the current filters.</div></td></tr>`;
+    return;
+  }
+  body.innerHTML = pageRows.map((r) => `
+    <tr data-id="${esc(r.id)}" class="${state.selectedIds.has(r.id) ? "selected" : ""}">
+      <td><input type="checkbox" class="row-check" data-id="${esc(r.id)}" ${state.selectedIds.has(r.id) ? "checked" : ""}></td>
+      ${cols.map((c) => `<td class="${c.mono ? "mono" : ""}">${cellValue(r, c)}</td>`).join("")}
+    </tr>`).join("");
+
+  body.querySelectorAll("tr").forEach((tr) => {
+    tr.addEventListener("click", (e) => {
+      if (e.target.classList.contains("row-check")) return;
+      const row = pageRows.find((r) => r.id === tr.dataset.id);
+      if (row) openDetail(row);
+    });
+  });
+  body.querySelectorAll(".row-check").forEach((cb) => {
+    cb.addEventListener("click", (e) => e.stopPropagation());
+    cb.addEventListener("change", () => {
+      if (cb.checked) state.selectedIds.add(cb.dataset.id); else state.selectedIds.delete(cb.dataset.id);
+      cb.closest("tr").classList.toggle("selected", cb.checked);
+      renderSelectionCount();
+    });
+  });
+}
+
+function renderSelectionCount() {
+  const el = document.getElementById("selection-count");
+  el.textContent = state.selectedIds.size ? `${state.selectedIds.size} selected` : "";
+}
+
+document.getElementById("select-all-filtered").addEventListener("click", () => {
+  getFiltered().forEach((r) => state.selectedIds.add(r.id));
+  renderResults();
+});
+document.getElementById("clear-selection").addEventListener("click", () => {
+  state.selectedIds.clear();
+  renderResults();
+});
+
+function csvEscape(v) {
+  const s = v === null || v === undefined ? "" : String(v);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+document.getElementById("export-csv").addEventListener("click", () => {
+  const cols = activeColumns();
+  const filtered = getFiltered();
+  const rows = state.selectedIds.size ? filtered.filter((r) => state.selectedIds.has(r.id)) : filtered;
+  const header = cols.map((c) => c.label);
+  const lines = [header.map(csvEscape).join(",")];
+  rows.forEach((r) => {
+    lines.push(cols.map((c) => {
+      const v = r[c.key];
+      return csvEscape(Array.isArray(v) ? v.join("; ") : v);
+    }).join(","));
+  });
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `chattanooga-intel-${state.activeSection}-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+/* ---------------- Detail modal ---------------- */
+function openDetail(row) {
+  const root = document.getElementById("modal-root");
+  const signalGroups = Object.entries(row.signals || {}).map(([source, items]) => `
+    <div class="signal-group">
+      <h4>${esc(SOURCE_LABEL[source] || source)} (${items.length})</h4>
+      ${items.map((it) => `
+        <div class="signal-row">
+          <span>${esc(it.case_type || it.violation_type || (it.tax_year ? "Tax year " + it.tax_year : "Record"))}
+            ${it.amount ? " · " + fmtMoney(it.amount) : ""}${it.amount_due ? " · " + fmtMoney(it.amount_due) : ""}
+            ${it.filing_date || it.violation_date ? " · " + esc(it.filing_date || it.violation_date) : ""}</span>
+          ${it.source_url ? `<a href="${esc(it.source_url)}" target="_blank" rel="noopener">source ↗</a>` : ""}
+        </div>`).join("")}
+    </div>`).join("");
+
+  root.innerHTML = `
+    <div class="modal-backdrop" id="modal-backdrop">
+      <div class="modal">
+        <div class="modal-header">
+          <div>
+            <div class="addr">${esc(row.situs_address || row.parcel_id || "Unresolved record")}</div>
+            <div style="color:var(--text-muted); font-size:12.5px; margin-top:2px;">${esc(row.owner_name || "Unknown owner")}</div>
+          </div>
+          <button class="modal-close" id="modal-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span class="score-num" style="font-size:20px">${row.score != null ? row.score.toFixed(1) : "—"}</span>
+            ${tierBadge(row.tier)} ${sourceBadges(row.sources)}
+            ${row.is_absentee ? '<span class="badge flag">Absentee</span>' : ""}
+            ${row.is_entity_owner ? '<span class="badge flag">Entity</span>' : ""}
+          </div>
+          <div class="modal-grid">
+            <div><div class="k">Parcel ID</div><div class="v mono">${esc(row.parcel_id || "unresolved")}</div></div>
+            <div><div class="k">City / Zip</div><div class="v">${esc(row.city || "—")} ${esc(row.zip || "")}</div></div>
+            <div><div class="k">Mailing Address</div><div class="v mono">${esc(row.mailing_address || "—")}</div></div>
+            <div><div class="k">Owner Type</div><div class="v">${esc(row.owner_type || "—")}</div></div>
+            <div><div class="k">Total $ Exposure</div><div class="v mono">${fmtMoney(row.total_exposure)}</div></div>
+            <div><div class="k">Completeness</div><div class="v">${fmtPct(row.completeness_score)} ${(row.completeness_missing||[]).length ? "(missing: " + esc(row.completeness_missing.join(", ")) + ")" : ""}</div></div>
+          </div>
+          ${signalGroups || '<div style="color:var(--text-faint)">No detailed per-signal records in this file — see the relevant section table.</div>'}
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("modal-close").addEventListener("click", closeDetail);
+  document.getElementById("modal-backdrop").addEventListener("click", (e) => { if (e.target.id === "modal-backdrop") closeDetail(); });
+}
+function closeDetail() { document.getElementById("modal-root").innerHTML = ""; }
+
+/* ---------------- Mode toggle ---------------- */
+document.getElementById("mode-prospect").addEventListener("click", () => setMode("prospect"));
+document.getElementById("mode-verify").addEventListener("click", () => setMode("verify"));
+function setMode(mode) {
+  state.mode = mode;
+  resetPage();
+  document.getElementById("mode-prospect").classList.toggle("active", mode === "prospect");
+  document.getElementById("mode-verify").classList.toggle("active", mode === "verify");
+  document.getElementById("prospect-view").classList.toggle("active", mode === "prospect");
+  document.getElementById("verify-view").classList.toggle("active", mode === "verify");
+  renderResults();
+  if (mode === "prospect" && state.map) setTimeout(() => state.map.invalidateSize(), 50);
+}
+
+/* ---------------- Orchestration ---------------- */
+function renderResults() {
+  const filtered = getFiltered();
+  renderKPI(filtered);
+  if (state.mode === "prospect") renderProspect(filtered); else renderVerify(filtered);
+  renderSelectionCount();
+}
+function renderAll() {
+  renderNav();
+  renderFilterBar();
+  renderResults();
+}
+
+loadAll().then(renderAll).then(renderSegments);
+})();
+</script>
+</body>
+</html>
