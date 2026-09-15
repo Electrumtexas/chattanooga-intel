@@ -40,14 +40,22 @@ jobs:
       #   env:
       #     LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '1' }}
       #   run: python court_records.py
+      #   continue-on-error: true
 
+      # continue-on-error on every scrape step: quality_check.py (not a step
+      # crashing early) is meant to be the thing that decides pass/fail — a
+      # step left to fail hard here stops the whole job before quality_check
+      # even runs, which would silently block OTHER sources' good data from
+      # committing too. A step that fails still shows red in the Actions UI.
       - name: Scrape tax delinquent (Trustee direct download)
         working-directory: scraper
         run: python tax_delinquent.py
+        continue-on-error: true
 
       - name: Scrape code enforcement (ChattaData Socrata API)
         working-directory: scraper
         run: python code_enforcement.py
+        continue-on-error: true
 
       # --- Phase 3 GIS enrichment — NOT YET IMPLEMENTED ----------------------
       # Blocked on discovering the real ArcGIS endpoint behind
@@ -58,6 +66,7 @@ jobs:
       # - name: Enrich parcels via Assessor GIS
       #   working-directory: scraper
       #   run: python enrich_assessor.py
+      #   continue-on-error: true
 
       - name: Quality check (fails the build before anything commits)
         working-directory: scraper
