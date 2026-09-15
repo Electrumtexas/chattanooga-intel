@@ -1,0 +1,148 @@
+name: Source reachability probe
+
+# One polite request per candidate data source, run from GitHub's US-based
+# runners (where the scraper actually runs) rather than a developer machine.
+# Several Tennessee court/state hosts filter non-US traffic, so reachability
+# measured locally doesn't predict production. Logs on this public repo are
+# public: only status/size/markers are printed, never names or addresses.
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Probe each source once
+        shell: python
+        run: |
+          import json, re, time
+          import requests
+          from bs4 import BeautifulSoup
+
+          GIS = "https://mapsdev.hamiltontn.gov/hcwa03/rest/services"
+          session = requests.Session()
+
+          def snippet(text, pattern, width=220, limit=3):
+              out = []
+              for m in re.finditer(pattern, text, flags=re.I):
+                  s = max(m.start() - width // 2, 0)
+                  out.append(re.sub(r"\s+", " ", text[s:s + width]))
+                  if len(out) >= limit:
+                      break
+              return out
+
+          def pdf_links(html, must_contain):
+              soup = BeautifulSoup(html, "html.parser")
+              return [a["href"] for a in soup.find_all("a", href=True)
+                      if a["href"].lower().endswith(".pdf") and must_contain.lower() in a["href"].lower()][:12]
+
+          def probe(name, method, url, inspect=None, **kwargs):
+              started = time.time()
+              result = {"probe": name, "url": url}
+              try:
+                  resp = session.request(method, url, timeout=30, **kwargs)
+                  result.update(status=resp.status_code, bytes=len(resp.content),
+                                content_type=resp.headers.get("Content-Type"),
+                                last_modified=resp.headers.get("Last-Modified"),
+                                server=resp.headers.get("Server"))
+                  if inspect and resp.ok:
+                      result["details"] = inspect(resp)
+              except Exception as exc:
+                  result.update(error=type(exc).__name__, message=str(exc)[:200])
+              result["seconds"] = round(time.time() - started, 1)
+              print(json.dumps(result), flush=True)
+              time.sleep(1.5)
+
+          def title(resp):
+              m = re.search(r"<title[^>]*>(.*?)</title>", resp.text, re.I | re.S)
+              return {"title": m.group(1).strip()[:120] if m else None}
+
+          # --- foreclosure notices -------------------------------------------
+          probe("sos_posting_company_registry", "GET", "https://sos.tn.gov/publications/foreclosure-listing-companies",
+                inspect=lambda r: {"text": re.sub(r"\s+", " ", BeautifulSoup(r.text, "html.parser").get_text(" "))[:3000]})
+          probe("foreclosuretennessee_home", "GET", "https://www.foreclosuretennessee.com/",
+                inspect=lambda r: {**title(r), "mentions_hamilton": "Hamilton" in r.text})
+          probe("tnlegalpub_hamilton_json", "GET", "https://tnlegalpub.com/wp-json/wp/v2/legal_notice",
+                params={"county": 132, "per_page": 5, "_fields": "id,date,modified"},
+                inspect=lambda r: {"wp_total": r.headers.get("X-WP-Total"), "newest": r.json()[:5]})
+          probe("hamilton_county_herald_notices", "GET", "https://hamiltoncountyherald.com/PublicNotices.aspx", inspect=title)
+
+          # --- civil / collections ------------------------------------------
+          probe("tennesseecasefinder_home", "GET", "https://www.tennesseecasefinder.com/", inspect=title)
+
+          def edockets_page(r):
+              return {**title(r), "webshell_script_context": snippet(r.text, r"webshell|DocketGetInfo|OPERCODE", limit=4)}
+          probe("edockets_general_sessions_page", "GET", "https://www.edockets.us/hamiltontn/", inspect=edockets_page)
+          probe("edockets_docket_list_xhr", "POST", "https://www.edockets.us/cgi-bin/webshell.asp",
+                data={"GATEWAY": "GATEWAY", "XGATEWAY": "DocketGetInfo", "CGISCRIPT": "webshell.asp",
+                      "XEVENT": "VERIFY", "WEBIOHANDLE": str(int(time.time() * 1000)), "MYPARENT": "px",
+                      "APPID": "ham", "WEBWORDSKEY": "SAMPLE", "DEVPATH": "/INNOVISION/HAMILTON/HAMMAIN.DATA",
+                      "OPERCODE": "dummy", "PASSWD": "dummy"},
+                inspect=lambda r: {"response_head": r.text[:1200]})
+          probe("circuit_court_dockets_page", "GET", "https://www.hamiltontn.gov/CircuitCourt_Dockets.aspx",
+                inspect=lambda r: {"pdfs": pdf_links(r.text, "CircuitClerkDockets")})
+          probe("sessions_civil_dockets_page", "GET", "https://www.hamiltontn.gov/CivilCourt_Dockets.aspx",
+                inspect=lambda r: {"links_mentioning_edockets": snippet(r.text, r"edockets", limit=3)})
+
+          # --- probate / chancery -------------------------------------------
+          probe("chancery_dockets_page", "GET", "https://www.hamiltontn.gov/ChanceryCourt_Dockets.aspx",
+                inspect=lambda r: {"pdfs": pdf_links(r.text, "Chancery")})
+
+          # --- tax sale -----------------------------------------------------
+          probe("tax_sale_list_2026_pdf", "HEAD",
+                "https://www.hamiltontn.gov/Clerkmasterforms/taxsale/2026TaxSale/DELINQUENT%20TAX%20SALE%20LIST%202026.pdf")
+          probe("trustee_delinquent_csv_zip", "HEAD", "https://www.hamiltontn.gov/_downloadsTrusteeDelinquent/CTRUDELQCSV.zip")
+          probe("cmpti_search_page", "GET", "https://cmpti.hamiltontn.gov/AppFolder/CM_PropertySearch.aspx", inspect=title)
+
+          # --- liens (free monthly totals only) -----------------------------
+          probe("register_of_deeds_monthly_report", "GET", "https://register.hamiltontn.gov/OnlineRecordSearch/Home/Report.aspx",
+                inspect=lambda r: {"period": snippet(r.text, r"\d{1,2}/\d{1,2}/\d{4}", width=60, limit=2)})
+
+          # --- GIS ----------------------------------------------------------
+          probe("gis_live_parcels_count", "GET", f"{GIS}/Live_Parcels/MapServer/0/query",
+                params={"where": "1=1", "returnCountOnly": "true", "f": "json"}, inspect=lambda r: r.json())
+          probe("gis_parcel_by_tax_map_no", "GET", f"{GIS}/Live_Parcels/MapServer/0/query",
+                params={"where": "TAX_MAP_NO='137A T 016'", "outFields": "TAX_MAP_NO", "returnGeometry": "true",
+                        "outSR": "4326", "f": "json"},
+                inspect=lambda r: {"features": len(r.json().get("features", [])),
+                                   "has_geometry": bool(r.json().get("features") and r.json()["features"][0].get("geometry"))})
+          probe("gis_locator_taxmapno", "GET", f"{GIS}/Locator_TaxMapNo/GeocodeServer/findAddressCandidates",
+                params={"SingleKey": "137A T 016", "outSR": "4326", "f": "json"},
+                inspect=lambda r: {"candidates": [{"score": c.get("score"), "location": c.get("location")}
+                                                  for c in r.json().get("candidates", [])[:2]]})
+          probe("gis_home_rollover_notice", "GET", "https://gis.hamiltontn.gov/gishome.html",
+                inspect=lambda r: {"notice": snippet(BeautifulSoup(r.text, "html.parser").get_text(" "),
+                                                     r"new (mapping|site|url|address)|roll ?over|september|9/18", width=300, limit=4)})
+          probe("assessor_card", "GET", "https://assessor.hamiltontn.gov/card/137A_T_016")
+          probe("pwgis_city_parcels_count", "GET", "https://pwgis.chattanooga.gov/arcgis/rest/services/LDO/ViewPoint/MapServer/10/query",
+                params={"where": "1=1", "returnCountOnly": "true", "f": "json"}, inspect=lambda r: r.json())
+
+          # --- code enforcement ---------------------------------------------
+          probe("arcgis_violations_item", "GET", "https://www.arcgis.com/sharing/rest/content/items/19f35e4e09c041718905088a1fc7a6bb",
+                params={"f": "json"}, inspect=lambda r: {k: r.json().get(k) for k in ("title", "type", "size", "modified", "owner")})
+
+          def csv_head():
+              started = time.time()
+              out = {"probe": "arcgis_violations_csv_header"}
+              try:
+                  with session.get("https://www.arcgis.com/sharing/rest/content/items/19f35e4e09c041718905088a1fc7a6bb/data",
+                                   stream=True, timeout=30) as resp:
+                      out["status"] = resp.status_code
+                      first = next(resp.iter_content(chunk_size=4096))
+                      out["header_row"] = first.decode("utf-8", "replace").splitlines()[0]
+              except Exception as exc:
+                  out.update(error=type(exc).__name__, message=str(exc)[:200])
+              out["seconds"] = round(time.time() - started, 1)
+              print(json.dumps(out), flush=True)
+          csv_head()
