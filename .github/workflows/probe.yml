@@ -121,9 +121,9 @@ jobs:
                 params={"SingleKey": "137A T 016", "outSR": "4326", "f": "json"},
                 inspect=lambda r: {"candidates": [{"score": c.get("score"), "location": c.get("location")}
                                                   for c in r.json().get("candidates", [])[:2]]})
-          probe("gis_home_rollover_notice", "GET", "https://gis.hamiltontn.gov/gishome.html",
+          probe("gis_landing_page_notice", "GET", "https://gis.hamiltontn.gov/",
                 inspect=lambda r: {"notice": snippet(BeautifulSoup(r.text, "html.parser").get_text(" "),
-                                                     r"new (mapping|site|url|address)|roll ?over|september|9/18", width=300, limit=4)})
+                                                     r"new (mapping|site|url|address)|roll(ing)? ?over|GISMO|september|9/18", width=300, limit=4)})
           probe("assessor_card", "GET", "https://assessor.hamiltontn.gov/card/137A_T_016")
           probe("pwgis_city_parcels_count", "GET", "https://pwgis.chattanooga.gov/arcgis/rest/services/LDO/ViewPoint/MapServer/10/query",
                 params={"where": "1=1", "returnCountOnly": "true", "f": "json"}, inspect=lambda r: r.json())
