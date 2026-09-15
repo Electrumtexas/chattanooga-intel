@@ -1,6 +1,6 @@
 name: Scrape and deploy
 
-on:
+"on":
   schedule:
     - cron: "0 9 * * *"  # 09:00 UTC = 03:00/04:00 Central, after portals' overnight batch updates
   workflow_dispatch:
