@@ -114,11 +114,26 @@ jobs:
           git add data/chattanooga.db dashboard/*.json
           if git diff --staged --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            git commit -m "Automated scrape $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            git push
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          git commit -m "Automated scrape $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          # A manual dispatch (or the daily job overlapping a manual one) can
+          # race an unrelated push to master — e.g. a source-code commit
+          # landing while this run's scrapers were still working. Since this
+          # step only ever touches data/chattanooga.db and dashboard/*.json,
+          # rebasing onto whatever else landed is always safe (no other job
+          # touches those paths), so retry a few times before giving up.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt) — fetching and rebasing"
+            git fetch origin master
+            git rebase origin/master
+          done
+          echo "::error::git push failed after 5 rebase-and-retry attempts"
+          exit 1
 
   deploy:
     needs: scrape
