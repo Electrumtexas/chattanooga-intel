@@ -286,12 +286,14 @@ def build_meta(records: dict[str, list[dict]], leads: list[dict]) -> dict:
         total = len(rows)
         native = sum(1 for r in rows if r.get("resolution_method") == "native_parcel_id")
         resolved = sum(1 for r in rows if r.get("resolution_method") == "address_match")
+        point = sum(1 for r in rows if r.get("resolution_method") == "point_in_parcel")
         fallback = sum(1 for r in rows if r.get("resolution_method") == "owner_name_fallback")
-        unresolved = total - native - resolved - fallback
+        unresolved = total - native - resolved - point - fallback
         per_source[source] = {
             "total_records": total,
             "resolved_by_native_parcel_id": native,
             "resolved_by_address": resolved,
+            "resolved_by_point_in_parcel": point,
             "resolved_by_owner_name_fallback": fallback,
             "unresolved": unresolved,
             "fallback_rate": round(fallback / total, 3) if total else 0.0,
