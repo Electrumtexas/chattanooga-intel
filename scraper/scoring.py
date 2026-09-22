@@ -43,6 +43,7 @@ import math
 
 CASE_TYPE_TIER = {
     "foreclosure_notice": 90,
+    "foreclosure_notice_cancelled": 0,  # cancelled/withdrawn sale — audit trail only, not live distress
     "tax_sale_filing": 90,
     "tax_sale_resolved": 0,  # PAID/REMOVED from the tax-sale docket — audit trail only, not live distress
     "lis_pendens": 70,

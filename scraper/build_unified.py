@@ -131,7 +131,7 @@ def load_all_records(conn) -> dict[str, list[dict]]:
 # court_record_raw() from the multi-case stacking bonus — excluded from the
 # scoring group entirely (still shown in the dashboard's per-signal detail;
 # just not counted toward score/exposure/case-count).
-_NON_DISTRESS_CASE_TYPES = {"tax_sale_resolved"}
+_NON_DISTRESS_CASE_TYPES = {"tax_sale_resolved", "foreclosure_notice_cancelled"}
 
 
 def aggregate_source_group(source: str, group: list[dict]) -> tuple[float, str, float]:

@@ -67,6 +67,16 @@ jobs:
         run: python probate_dockets.py
         continue-on-error: true
 
+      # Six third-party posting sites, each mirroring a different law firm's
+      # newspaper foreclosure notice (TN foreclosures require newspaper
+      # publication, not a county filing, so no single site is a master
+      # list — see the module docstring). Deliberately additive: one site
+      # failing doesn't block the others.
+      - name: Scrape foreclosure notices (posting sites)
+        working-directory: scraper
+        run: python foreclosure_notices.py
+        continue-on-error: true
+
       # edockets.us answers US IPs only, so this step is the only place it can
       # be exercised — it can't be run from the dev machine's connection.
       - name: Scrape General Sessions dockets

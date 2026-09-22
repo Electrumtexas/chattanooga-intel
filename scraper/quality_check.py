@@ -101,6 +101,13 @@ SOURCES: dict[str, SourceCheck] = {
         allow_zero=True,
         note="Resolves a backlog, so counts fall off naturally once it's caught up; it fails loudly on its own if GIS is down.",
     ),
+    "foreclosure_notices": SourceCheck(
+        threshold_ratio=0.30,
+        blocking=False,
+        allow_zero=True,
+        note="Additive feed across 6 independent posting sites; one site being blocked or down "
+             "doesn't zero out the others, so a low day is normal variation, not a broken pipeline.",
+    ),
 }
 
 
