@@ -64,6 +64,14 @@ jobs:
           # Dates, courtrooms, docket types and file names only; no party data is printed.
           for e in entries:
               print(e)
+          # Paths the list returned on 2026-09-15; older PDFs may stay on the server after
+          # they drop off the upcoming-dockets list, which is useful for format samples.
+          known = ["dockets/ses.214395161096.133696.pdf", "dockets/ses.2143951603444.133694.pdf",
+                   "dockets/ses.214395161784.133698.pdf", "dockets/ses.21437271477.131808.pdf",
+                   "dockets/ses.2143727134359.131804.pdf", "dockets/ses.2143727193630.131816.pdf"]
+          types = ["Detainer", "Detainer", "Appearance", "Trial", "Trial", "Trial"]
+          for path, dtype in zip(known, types):
+              entries.append(["0915", "", "", "", dtype + "_known", path])
           by_type = {}
           for e in entries:
               if len(e) >= 6 and e[5].lower().endswith(".pdf"):
