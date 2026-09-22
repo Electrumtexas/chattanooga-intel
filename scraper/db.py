@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS court_records (
     amount              REAL,
     raw_address         TEXT,
     raw_owner_name      TEXT,
-    resolution_method   TEXT,            -- 'native_parcel_id' | 'address_match' | 'owner_name_fallback' | 'unresolved'
+    resolution_method   TEXT,            -- 'native_parcel_id' | 'address_match' | 'point_in_parcel' | 'owner_name_fallback' | 'unresolved'
     source_url          TEXT,
     first_seen_at       TEXT NOT NULL,
     last_seen_at        TEXT NOT NULL

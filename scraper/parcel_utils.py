@@ -26,6 +26,17 @@ def format_parcel_id(map_: str | None, group: str | None, parcel: str | None) ->
     return "-".join(parts) if parts else None
 
 
+def assessor_card_url(parcel_id: str | None) -> str | None:
+    """The county's server-prerendered per-parcel page. Verified byte-for-
+    byte against Live_Parcels' own RecordsOnl field, including the
+    blank-group case (e.g. "005-001" -> .../card/005_001, group omitted
+    rather than double-underscored) — see enrich_assessor.py.
+    """
+    if not parcel_id:
+        return None
+    return f"https://assessor.hamiltontn.gov/card/{parcel_id.replace('-', '_')}"
+
+
 def classify_owner_type(owner_name: str | None) -> str | None:
     """Best-effort classification from the raw owner name string alone.
     'individual' is the default; only escalates to 'llc'/'corp'/'trust' on

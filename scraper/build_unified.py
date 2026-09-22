@@ -13,6 +13,7 @@ bar, KPI strip) can treat all four uniformly:
 
     id, parcel_id, situs_address, city, zip, owner_name, mailing_address,
     owner_type, is_entity_owner, is_absentee, latitude, longitude,
+    land_use, appraised_value, assessor_card_url,
     score, tier, sources, event_date, total_exposure, top_signal,
     completeness_score, completeness_missing, last_updated
 
@@ -45,6 +46,7 @@ import os
 from pathlib import Path
 
 from db import get_connection, now_iso
+from parcel_utils import assessor_card_url
 from scoring import (
     CASE_TYPE_TIER,
     DEFAULT_CASE_TYPE_TIER,
@@ -231,6 +233,9 @@ def common_fields(parcel: dict, score: float, tier: str, event_date, total_expos
         "is_absentee": bool(parcel.get("is_absentee")),
         "latitude": parcel.get("latitude"),
         "longitude": parcel.get("longitude"),
+        "land_use": parcel.get("land_use"),
+        "appraised_value": parcel.get("appraised_value"),
+        "assessor_card_url": assessor_card_url(parcel.get("parcel_id")),
         "score": score,
         "tier": tier,
         "event_date": event_date,

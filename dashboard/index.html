@@ -277,6 +277,9 @@ const COMMON_COLUMNS = [
   { key: "owner_type", label: "Owner Type" },
   { key: "is_absentee", label: "Absentee", fmt: "bool" },
   { key: "mailing_address", label: "Mailing Address", mono: true },
+  { key: "land_use", label: "Land Use" },
+  { key: "appraised_value", label: "Appraised Value", mono: true, fmt: "money" },
+  { key: "assessor_card_url", label: "Assessor Card", fmt: "link" },
   { key: "score", label: "Score", fmt: "score" },
   { key: "tier", label: "Tier", fmt: "tier" },
   { key: "sources", label: "Sources", fmt: "sources" },
@@ -390,6 +393,7 @@ function cellValue(row, col) {
     case "score": return `<span class="score-num">${raw != null ? raw.toFixed(1) : "—"}</span>`;
     case "tier": return tierBadge(raw);
     case "sources": return sourceBadges(raw);
+    case "link": return raw ? `<a href="${esc(raw)}" target="_blank" rel="noopener">Card</a>` : "—";
     default: return raw === null || raw === undefined || raw === "" ? "—" : esc(raw);
   }
 }

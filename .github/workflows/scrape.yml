@@ -80,6 +80,11 @@ jobs:
       # the dashboard map has nothing to plot without it.
       - name: Enrich parcels via county GIS
         working-directory: scraper
+        env:
+          ENRICH_MAX_PARCELS: "20000"
+          ENRICH_MAX_ADDRESSES: "3000"
+          ENRICH_MAX_POINTS: "5000"
+          ENRICH_MAX_OWNER_LOOKUPS: "500"
         run: python enrich_assessor.py
         continue-on-error: true
 
