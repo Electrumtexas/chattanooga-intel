@@ -52,21 +52,36 @@ jobs:
         run: python tax_delinquent.py
         continue-on-error: true
 
-      - name: Scrape code enforcement (ChattaData Socrata API)
+      - name: Scrape code enforcement (City violations export on ArcGIS)
         working-directory: scraper
         run: python code_enforcement.py
         continue-on-error: true
 
-      # --- Phase 3 GIS enrichment — NOT YET IMPLEMENTED ----------------------
-      # Blocked on discovering the real ArcGIS endpoint behind
-      # gismaps.hamiltontn.gov. scraper/enrich_assessor.py currently raises
-      # NotImplementedError by design. Uncomment once that's confirmed.
-      # No parcel will have latitude/longitude until this is live, which
-      # means Prospect Mode's map has nothing to plot yet — expected for now.
-      # - name: Enrich parcels via Assessor GIS
-      #   working-directory: scraper
-      #   run: python enrich_assessor.py
-      #   continue-on-error: true
+      - name: Scrape Clerk & Master tax sale list
+        working-directory: scraper
+        run: python tax_sale.py
+        continue-on-error: true
+
+      - name: Scrape Chancery probate dockets
+        working-directory: scraper
+        run: python probate_dockets.py
+        continue-on-error: true
+
+      # edockets.us answers US IPs only, so this step is the only place it can
+      # be exercised — it can't be run from the dev machine's connection.
+      - name: Scrape General Sessions dockets
+        working-directory: scraper
+        run: python sessions_dockets.py
+        continue-on-error: true
+
+      # Resolves addresses/points/owner names to parcels and backfills
+      # lat/long + owner data from the county GIS. Runs after every source so
+      # it sees the day's new rows, and before the quality check and export —
+      # the dashboard map has nothing to plot without it.
+      - name: Enrich parcels via county GIS
+        working-directory: scraper
+        run: python enrich_assessor.py
+        continue-on-error: true
 
       - name: Quality check (fails the build before anything commits)
         working-directory: scraper
