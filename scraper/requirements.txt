@@ -3,6 +3,7 @@ beautifulsoup4>=4.12
 lxml>=5.0
 pandas>=2.2
 python-dateutil>=2.9
+pypdf>=4.2
 
 # playwright is NOT included yet — Phase 1 portal reconnaissance will confirm
 # whether any source actually requires JS rendering vs. plain requests+bs4.

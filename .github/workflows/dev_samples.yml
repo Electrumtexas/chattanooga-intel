@@ -1,0 +1,55 @@
+# Manual dev helper: edockets.us only answers US IPs, so parser development
+# pulls a few current General Sessions docket PDFs through a runner. The
+# artifact expires after 1 day and is deleted as soon as it's downloaded.
+name: dev-samples
+
+"on":
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  samples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Fetch docket list and sample PDFs
+        shell: python
+        run: |
+          import json, re, time, pathlib, requests
+          out = pathlib.Path("samples"); out.mkdir()
+          s = requests.Session(); s.headers["User-Agent"] = "Mozilla/5.0 (chattanooga-intel dev)"
+          r = s.post("https://www.edockets.us/cgi-bin/webshell.asp", timeout=60, data={
+              "GATEWAY": "GATEWAY", "XGATEWAY": "DocketGetInfo", "CGISCRIPT": "webshell.asp",
+              "XEVENT": "VERIFY", "WEBIOHANDLE": str(int(time.time() * 1000)), "MYPARENT": "px",
+              "APPID": "ham", "WEBWORDSKEY": "SAMPLE", "DEVPATH": "/INNOVISION/HAMILTON/HAMMAIN.DATA",
+              "OPERCODE": "dummy", "PASSWD": "dummy"})
+          (out / "docket_list_raw.txt").write_text(r.text)
+          rows = re.findall(r'\[("[^\]]*")\]', r.text)
+          entries = [json.loads("[" + row + "]") for row in rows]
+          # Dates, courtrooms, docket types and file names only; no party data is printed.
+          for e in entries:
+              print(e)
+          by_type = {}
+          for e in entries:
+              if len(e) >= 6 and e[5].lower().endswith(".pdf"):
+                  by_type.setdefault(e[4], []).append(e)
+          for dtype, items in by_type.items():
+              for e in items[:2]:
+                  for base in ("https://www.edockets.us/hamiltontn/", "https://www.edockets.us/"):
+                      pr = s.get(base + e[5], timeout=60)
+                      ok = pr.ok and pr.content[:4] == b"%PDF"
+                      print(dtype, e[0], base + e[5], pr.status_code, "pdf" if ok else "not-pdf")
+                      if ok:
+                          name = re.sub(r"[^A-Za-z0-9._-]", "_", f"{dtype}_{e[0]}_{pathlib.Path(e[5]).name}")
+                          (out / name).write_bytes(pr.content)
+                          break
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docket-samples
+          path: samples/
+          retention-days: 1

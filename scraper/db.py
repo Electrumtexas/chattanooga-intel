@@ -25,6 +25,13 @@ code_enforcement  One row per violation case.
 scrape_log        One row per scraper run per source: what it fetched, so
                    quality_check.py has a trailing baseline to compare against.
 
+source_state      Small key/value store for change detection between runs
+                   (e.g. the last-seen size of a downloaded file), so a
+                   scraper can skip re-downloading something unchanged.
+
+Set CHATTANOOGA_DB to point every module at a different database file —
+used for testing against a copy without touching the committed one.
+
 Dedup strategy: each source table has a single `dedupe_key` TEXT UNIQUE
 column instead of a multi-column UNIQUE constraint, because several sources
 don't reliably provide every field a composite key would need (e.g. a lis
@@ -35,11 +42,12 @@ available, else a hash of whatever identifying fields exist.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "chattanooga.db"
+DB_PATH = Path(os.environ.get("CHATTANOOGA_DB") or Path(__file__).resolve().parent.parent / "data" / "chattanooga.db")
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS parcels (
@@ -124,6 +132,12 @@ CREATE TABLE IF NOT EXISTS scrape_log (
     notes               TEXT
 );
 
+CREATE TABLE IF NOT EXISTS source_state (
+    key                 TEXT PRIMARY KEY,
+    value               TEXT,
+    updated_at          TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_court_parcel ON court_records(parcel_id);
 CREATE INDEX IF NOT EXISTS idx_tax_parcel ON tax_delinquent(parcel_id);
 CREATE INDEX IF NOT EXISTS idx_code_parcel ON code_enforcement(parcel_id);
@@ -131,8 +145,25 @@ CREATE INDEX IF NOT EXISTS idx_scrape_log_source_run ON scrape_log(source, run_a
 """
 
 
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS won't add
+# them to an existing database file, so get_connection() adds any missing ones.
+ADDED_COLUMNS = {
+    "parcels": {"tax_map_no": "TEXT", "land_use": "TEXT", "appraised_value": "REAL"},
+    "court_records": {"description": "TEXT"},
+    "code_enforcement": {"record_id": "TEXT", "violation_code": "TEXT", "latitude": "REAL", "longitude": "REAL"},
+}
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    for table, cols in ADDED_COLUMNS.items():
+        existing = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for col, col_type in cols.items():
+            if col not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
 
 
 def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
@@ -141,7 +172,21 @@ def get_connection(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _ensure_columns(conn)
     return conn
+
+
+def get_state(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM source_state WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_state(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO source_state (key, value, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        (key, value, now_iso()),
+    )
 
 
 def upsert_parcel(conn: sqlite3.Connection, parcel_id: str, **fields) -> None:
