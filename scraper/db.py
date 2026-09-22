@@ -223,8 +223,19 @@ def upsert_parcel(conn: sqlite3.Connection, parcel_id: str, **fields) -> None:
         )
 
 
-def upsert_record(conn: sqlite3.Connection, table: str, dedupe_key: str, **fields) -> None:
-    """Shared upsert for the three source tables, keyed on dedupe_key.
+def upsert_record(
+    conn: sqlite3.Connection,
+    table: str,
+    dedupe_key: str,
+    keep_existing: tuple[str, ...] = (),
+    **fields,
+) -> None:
+    """Shared upsert for the source tables, keyed on dedupe_key.
+
+    Columns named in `keep_existing` are only filled when currently NULL,
+    never overwritten. Scrapers that can't resolve a parcel themselves pass
+    keep_existing=("parcel_id", "resolution_method") so a daily re-scrape
+    doesn't undo a match enrich_assessor.py made on an earlier run.
 
     `table` is always a hardcoded literal from a caller in this codebase
     (never user/request input), so building the statement with an f-string
@@ -243,7 +254,9 @@ def upsert_record(conn: sqlite3.Connection, table: str, dedupe_key: str, **field
             values,
         )
     else:
-        set_clause = ",".join(f"{k} = ?" for k in fields)
+        set_clause = ",".join(
+            f"{k} = COALESCE({k}, ?)" if k in keep_existing else f"{k} = ?" for k in fields
+        )
         conn.execute(
             f"UPDATE {table} SET {set_clause}, last_seen_at = ? WHERE dedupe_key = ?",
             [*fields.values(), now, dedupe_key],

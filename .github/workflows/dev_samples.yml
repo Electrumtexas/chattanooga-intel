@@ -23,12 +23,24 @@ jobs:
           import json, re, time, pathlib, requests
           out = pathlib.Path("samples"); out.mkdir()
           s = requests.Session(); s.headers["User-Agent"] = "Mozilla/5.0 (chattanooga-intel dev)"
+          # The docket page sets the session cookie the list call depends on; keep its
+          # HTML and scripts too so the parser author can see the exact request the page makes.
+          page = s.get("https://www.edockets.us/hamiltontn/", timeout=60)
+          (out / "page.html").write_text(page.text)
+          print("page", page.status_code, len(page.text), "cookies:", list(s.cookies.keys()))
+          for src in set(re.findall(r'<script[^>]+src="([^"]+)"', page.text, flags=re.I)):
+              url = requests.compat.urljoin(page.url, src)
+              js = s.get(url, timeout=60)
+              print("script", url, js.status_code, len(js.text))
+              if js.ok:
+                  (out / ("js_" + re.sub(r"[^A-Za-z0-9._-]", "_", src)[-80:])).write_text(js.text)
           r = s.post("https://www.edockets.us/cgi-bin/webshell.asp", timeout=60, data={
               "GATEWAY": "GATEWAY", "XGATEWAY": "DocketGetInfo", "CGISCRIPT": "webshell.asp",
               "XEVENT": "VERIFY", "WEBIOHANDLE": str(int(time.time() * 1000)), "MYPARENT": "px",
               "APPID": "ham", "WEBWORDSKEY": "SAMPLE", "DEVPATH": "/INNOVISION/HAMILTON/HAMMAIN.DATA",
               "OPERCODE": "dummy", "PASSWD": "dummy"})
           (out / "docket_list_raw.txt").write_text(r.text)
+          print("list", r.status_code, len(r.text))
           rows = re.findall(r'\[("[^\]]*")\]', r.text)
           entries = [json.loads("[" + row + "]") for row in rows]
           # Dates, courtrooms, docket types and file names only; no party data is printed.
