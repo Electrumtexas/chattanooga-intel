@@ -34,11 +34,29 @@ jobs:
               print("script", url, js.status_code, len(js.text))
               if js.ok:
                   (out / ("js_" + re.sub(r"[^A-Za-z0-9._-]", "_", src)[-80:])).write_text(js.text)
-          r = s.post("https://www.edockets.us/cgi-bin/webshell.asp", timeout=60, data={
-              "GATEWAY": "GATEWAY", "XGATEWAY": "DocketGetInfo", "CGISCRIPT": "webshell.asp",
-              "XEVENT": "VERIFY", "WEBIOHANDLE": str(int(time.time() * 1000)), "MYPARENT": "px",
-              "APPID": "ham", "WEBWORDSKEY": "SAMPLE", "DEVPATH": "/INNOVISION/HAMILTON/HAMMAIN.DATA",
-              "OPERCODE": "dummy", "PASSWD": "dummy"})
+          # Try the request the way the page's own XHR sends it (raw text/plain body,
+          # WEBIOHANDLE = epoch ms + day of month) as well as form-encoded.
+          now = time.localtime()
+          handle = str(int(time.time() * 1000) + now.tm_mday)
+          params = [("GATEWAY", "GATEWAY"), ("XGATEWAY", "DocketGetInfo"), ("CGISCRIPT", "webshell.asp"),
+                    ("XEVENT", "VERIFY"), ("WEBIOHANDLE", handle), ("MYPARENT", "px"), ("APPID", "ham"),
+                    ("WEBWORDSKEY", "SAMPLE"), ("DEVPATH", "/INNOVISION/HAMILTON/HAMMAIN.DATA"),
+                    ("OPERCODE", "dummy"), ("PASSWD", "dummy")]
+          raw = "&".join(f"{k}={v}" for k, v in params)
+          hdrs = {"Referer": "https://www.edockets.us/hamiltontn/", "Origin": "https://www.edockets.us",
+                  "X-Requested-With": "XMLHttpRequest"}
+          url = "https://www.edockets.us/cgi-bin/webshell.asp"
+          variants = {
+              "form": dict(data=dict(params)),
+              "form_referer": dict(data=dict(params), headers=hdrs),
+              "text_plain_referer": dict(data=raw.encode(), headers={**hdrs, "Content-Type": "text/plain;charset=UTF-8"}),
+          }
+          r = None
+          for name, kw in variants.items():
+              resp = s.post(url, timeout=60, **kw)
+              print("variant", name, resp.status_code, len(resp.text), resp.headers.get("Content-Type"))
+              if r is None or len(resp.text) > len(r.text):
+                  r = resp
           (out / "docket_list_raw.txt").write_text(r.text)
           print("list", r.status_code, len(r.text))
           rows = re.findall(r'\[("[^\]]*")\]', r.text)
