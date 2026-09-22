@@ -41,6 +41,7 @@ surface. Documented in CLAUDE.md.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from db import get_connection, now_iso
@@ -58,7 +59,10 @@ from scoring import (
     tax_delinquent_raw,
 )
 
-DASHBOARD_DIR = Path(__file__).resolve().parent.parent / "dashboard"
+# Overridable so integration testing against a scratch CHATTANOOGA_DB never
+# writes into the committed dashboard/ directory — mirrors db.py's
+# CHATTANOOGA_DB override for the same reason.
+DASHBOARD_DIR = Path(os.environ.get("DASHBOARD_DIR") or Path(__file__).resolve().parent.parent / "dashboard")
 
 SOURCE_TABLES = ["court_records", "tax_delinquent", "code_enforcement"]
 
@@ -117,6 +121,17 @@ def load_all_records(conn) -> dict[str, list[dict]]:
     return records
 
 
+
+# Case types that represent a closed/resolved chapter of a court record rather
+# than live distress — e.g. a tax-sale docket entry that was PAID or REMOVED
+# before auction. CASE_TYPE_TIER already scores these at 0, but a parcel whose
+# *only* court records are of this type could still pick up a nonzero
+# court_record_raw() from the multi-case stacking bonus — excluded from the
+# scoring group entirely (still shown in the dashboard's per-signal detail;
+# just not counted toward score/exposure/case-count).
+_NON_DISTRESS_CASE_TYPES = {"tax_sale_resolved"}
+
+
 def aggregate_source_group(source: str, group: list[dict]) -> tuple[float, str, float]:
     """Collapse ALL of one parcel's records within a single source into one
     (raw_score, top_signal_text, exposure_dollars) triple, so a parcel with
@@ -126,9 +141,10 @@ def aggregate_source_group(source: str, group: list[dict]) -> tuple[float, str, 
     single source-level raw value, not as separate noisy-OR terms.
     """
     if source == "court_records":
-        best = max(group, key=lambda r: CASE_TYPE_TIER.get(r.get("case_type"), DEFAULT_CASE_TYPE_TIER))
-        total_amount = sum(r.get("amount") or 0.0 for r in group)
-        raw = court_record_raw(best.get("case_type"), total_amount, case_count=len(group))
+        active = [r for r in group if r.get("case_type") not in _NON_DISTRESS_CASE_TYPES] or group
+        best = max(active, key=lambda r: CASE_TYPE_TIER.get(r.get("case_type"), DEFAULT_CASE_TYPE_TIER))
+        total_amount = sum(r.get("amount") or 0.0 for r in active)
+        raw = court_record_raw(best.get("case_type"), total_amount, case_count=len(active))
         return raw, _court_top_signal(best, len(group) - 1), total_amount
 
     if source == "tax_delinquent":
@@ -263,13 +279,18 @@ def build_source_export(source: str, records: list[dict], aggregates: dict[str, 
                 "situs_address": r.get("raw_address"),
                 "mailing_address": None,
                 "parcel_id": pid,
-                "latitude": None,
+                "latitude": r.get("latitude"),
             })
             base = common_fields(
                 empty_parcel_shell, score, "single_signal", None, round(exposure, 2), top_signal, comp_score, comp_missing,
             )
             base["situs_address"] = r.get("raw_address")
             base["owner_name"] = r.get("raw_owner_name")
+            # Some sources (code_enforcement) carry their own lat/long even before
+            # parcel resolution — surface it so the map has something to plot.
+            if r.get("latitude") is not None:
+                base["latitude"] = r.get("latitude")
+                base["longitude"] = r.get("longitude")
             base["sources"] = [source]
 
         row = dict(base)

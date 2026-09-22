@@ -44,11 +44,13 @@ import math
 CASE_TYPE_TIER = {
     "foreclosure_notice": 90,
     "tax_sale_filing": 90,
+    "tax_sale_resolved": 0,  # PAID/REMOVED from the tax-sale docket — audit trail only, not live distress
     "lis_pendens": 70,
     "lien": 65,
     "collections": 55,
     "judgment": 60,
     "probate": 40,
+    "detainer": 35,  # a landlord filing eviction is a moderate "tired landlord" signal, not owner financial distress
 }
 DEFAULT_CASE_TYPE_TIER = 50
 

@@ -52,7 +52,7 @@ jobs:
         run: python tax_delinquent.py
         continue-on-error: true
 
-      - name: Scrape code enforcement (City violations export on ArcGIS)
+      - name: Scrape code enforcement (ArcGIS Hub CSV)
         working-directory: scraper
         run: python code_enforcement.py
         continue-on-error: true
