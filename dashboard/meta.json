@@ -1,20 +1,20 @@
 {
-  "generated_at": "2026-09-23T14:10:22Z",
-  "unified_lead_count": 11807,
+  "generated_at": "2026-09-24T14:07:38Z",
+  "unified_lead_count": 13397,
   "tier_counts": {
-    "single_signal": 11251,
-    "multi_factor": 547,
-    "triple_threat": 9
+    "multi_factor": 728,
+    "single_signal": 12656,
+    "triple_threat": 13
   },
   "sources": {
     "court_records": {
-      "total_records": 663,
+      "total_records": 687,
       "resolved_by_native_parcel_id": 192,
       "resolved_by_address": 26,
       "resolved_by_point_in_parcel": 0,
       "resolved_by_owner_name_fallback": 3,
-      "unresolved": 442,
-      "fallback_rate": 0.005
+      "unresolved": 466,
+      "fallback_rate": 0.004
     },
     "tax_delinquent": {
       "total_records": 12333,
@@ -28,10 +28,10 @@
     "code_enforcement": {
       "total_records": 28640,
       "resolved_by_native_parcel_id": 0,
-      "resolved_by_address": 4285,
-      "resolved_by_point_in_parcel": 3348,
+      "resolved_by_address": 6392,
+      "resolved_by_point_in_parcel": 5096,
       "resolved_by_owner_name_fallback": 0,
-      "unresolved": 21007,
+      "unresolved": 17152,
       "fallback_rate": 0.0
     }
   }
