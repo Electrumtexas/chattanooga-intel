@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-09-27T14:36:01Z",
-  "unified_lead_count": 15859,
+  "generated_at": "2026-09-28T17:25:57Z",
+  "unified_lead_count": 16242,
   "tier_counts": {
     "triple_threat": 16,
-    "multi_factor": 991,
-    "single_signal": 14852
+    "multi_factor": 1024,
+    "single_signal": 15202
   },
   "sources": {
     "court_records": {
@@ -28,10 +28,10 @@
     "code_enforcement": {
       "total_records": 28864,
       "resolved_by_native_parcel_id": 0,
-      "resolved_by_address": 12078,
+      "resolved_by_address": 13343,
       "resolved_by_point_in_parcel": 6861,
       "resolved_by_owner_name_fallback": 0,
-      "unresolved": 9925,
+      "unresolved": 8660,
       "fallback_rate": 0.0
     }
   }
