@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-02T15:27:50Z",
+  "generated_at": "2026-10-03T14:10:34Z",
   "unified_lead_count": 16547,
   "tier_counts": {
     "triple_threat": 16,
@@ -8,12 +8,12 @@
   },
   "sources": {
     "court_records": {
-      "total_records": 1067,
+      "total_records": 1166,
       "resolved_by_native_parcel_id": 192,
       "resolved_by_address": 29,
       "resolved_by_point_in_parcel": 0,
       "resolved_by_owner_name_fallback": 3,
-      "unresolved": 843,
+      "unresolved": 942,
       "fallback_rate": 0.003
     },
     "tax_delinquent": {
