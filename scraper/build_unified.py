@@ -95,10 +95,24 @@ def _is_entity(owner_type: str | None) -> bool:
     return owner_type in ("llc", "corp", "trust")
 
 
+# case_types whose `filing_date` actually holds an auction/sale date, not a
+# filing date — several foreclosure posting sites expose only a sale date
+# (no separate "posted" date), and tax_sale.py's PDF only has the auction
+# date, so `filing_date` is reused for it (see those modules' docstrings).
+# Rendering it with the word "filed" is actively misleading: a future sale
+# date next to "filed" reads as a contradiction (caught 2026-10-06 — a real
+# notice's "filed 2026-11-19" was a sale date three weeks out, not a filing).
+_SALE_DATED_CASE_TYPES = {"foreclosure_notice", "foreclosure_notice_cancelled", "tax_sale_filing", "tax_sale_resolved"}
+
+
 def _court_top_signal(r: dict, extra_count: int = 0) -> str:
     label = (r.get("case_type") or "case").replace("_", " ").title()
     amt = f" — ${r['amount']:,.0f}" if r.get("amount") else ""
-    date = f" filed {r['filing_date']}" if r.get("filing_date") else ""
+    if r.get("filing_date"):
+        verb = "sale" if r.get("case_type") in _SALE_DATED_CASE_TYPES else "filed"
+        date = f" {verb} {r['filing_date']}"
+    else:
+        date = ""
     more = f" (+{extra_count} more case{'s' if extra_count > 1 else ''})" if extra_count else ""
     return f"{label}{date}{amt}{more}"
 
