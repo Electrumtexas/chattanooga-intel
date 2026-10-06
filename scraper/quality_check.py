@@ -111,6 +111,22 @@ SOURCES: dict[str, SourceCheck] = {
 }
 
 
+def _mark(conn, run, status: str, verdict: str | None) -> None:
+    """Append this check's verdict to the scraper's own note rather than
+    replacing it — mark_run_status() used to be called with a verdict-only
+    string on every branch, which silently discarded whatever diagnostic
+    detail the scraper itself had written (per-site success/failure counts,
+    merge stats, resolution rates, ...) on every day the run was healthy —
+    i.e. the common case, and exactly the case where that detail is most
+    useful for later debugging a slow regression. Caught 2026-10-06: two
+    weeks of foreclosure_notices.py's own notes (site-by-site breakdowns)
+    had all been overwritten to a single quality-check sentence.
+    """
+    existing = (run["notes"] or "").strip()
+    combined = f"{existing} | qc: {verdict}" if existing and verdict else (verdict or existing or None)
+    mark_run_status(conn, run["id"], status, combined)
+
+
 def check_source(conn, source: str, config: SourceCheck | None = None) -> tuple[bool, str]:
     config = config or SOURCES.get(source) or SourceCheck()
     run = latest_run(conn, source)
@@ -122,25 +138,25 @@ def check_source(conn, source: str, config: SourceCheck | None = None) -> tuple[
     tag = "" if config.blocking else " (non-blocking)"
 
     if baseline is None:
-        mark_run_status(conn, run["id"], "ok", "first run — no baseline to compare against")
+        _mark(conn, run, "ok", "first run — no baseline to compare against")
         return True, f"{source}: {count} records, no baseline yet (establishing history)"
 
     if baseline > 0 and count == 0:
         if config.allow_zero:
-            mark_run_status(conn, run["id"], "ok", f"0 records, baseline {baseline:.1f} — expected for this source")
+            _mark(conn, run, "ok", f"0 records, baseline {baseline:.1f} — expected for this source")
             return True, f"{source}: 0 records vs {baseline:.1f} baseline — normal for this source (nothing new posted)"
-        mark_run_status(conn, run["id"], "quality_check_failed", f"got 0 records, baseline {baseline:.1f}")
+        _mark(conn, run, "quality_check_failed", f"got 0 records, baseline {baseline:.1f}")
         return False, f"{source}: got 0 records, baseline is {baseline:.1f} — likely blocked or portal markup changed{tag}"
 
     if baseline > 0 and count < baseline * config.threshold_ratio:
         pct = count / baseline
         if config.allow_zero and not config.blocking:
-            mark_run_status(conn, run["id"], "ok", f"{count} vs baseline {baseline:.1f} ({pct:.0%}) — lumpy source")
+            _mark(conn, run, "ok", f"{count} vs baseline {baseline:.1f} ({pct:.0%}) — lumpy source")
             return True, f"{source}: {count} records, {pct:.0%} of the {baseline:.1f} baseline — low but expected to vary"
-        mark_run_status(conn, run["id"], "quality_check_failed", f"{count} vs baseline {baseline:.1f} ({pct:.0%})")
+        _mark(conn, run, "quality_check_failed", f"{count} vs baseline {baseline:.1f} ({pct:.0%})")
         return False, f"{source}: got {count} records, only {pct:.0%} of the {baseline:.1f} trailing baseline{tag}"
 
-    mark_run_status(conn, run["id"], "ok", None)
+    _mark(conn, run, "ok", None)
     return True, f"{source}: {count} records vs {baseline:.1f} baseline — OK"
 
 
