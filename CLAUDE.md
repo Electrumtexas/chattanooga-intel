@@ -30,7 +30,7 @@ actual module end-to-end against a real, disposable copy of the DB.
 | Tax-sale filings | Clerk & Master annual Delinquent Tax Sale LIST PDF | PDF parse | **LIVE** (`tax_sale.py`) |
 | Code enforcement | City of Chattanooga ArcGIS Hub CSV item | ~90MB CSV | **LIVE** (`code_enforcement.py`, rewritten — the old Socrata endpoint was dead) |
 | Parcel → lat/long, owner, land use, value | County ArcGIS `Live_Parcels` (new `mapsdev` host, post-9/18 migration) | ArcGIS REST JSON | **LIVE** (`enrich_assessor.py`) |
-| Foreclosure notices | 6 posting sites (betterchoicenotices, nwpostingservices, foreclosuretennessee, tnlegalpub, capitalcitypostings, tennesseepostings) | JSON APIs / ASP.NET postback / static HTML, cross-site merge on deed book/page | **LIVE** (`foreclosure_notices.py`); a 7th site, internetpostings.com, is pending an owner OK (see Decisions still open) |
+| Foreclosure notices | 7 posting sites (betterchoicenotices, nwpostingservices, foreclosuretennessee, tnlegalpub, capitalcitypostings, tennesseepostings) | JSON APIs / ASP.NET postback / static HTML, cross-site merge on deed book/page | **LIVE** (`foreclosure_notices.py`), plus a 7th site, internetpostings.com (`internetpostings_site.py`, owner-authorized terms acceptance) |
 | Probate / estates | Chancery Court Part 2 motion docket PDFs | PDF parse | **LIVE** (`probate_dockets.py`); partial coverage by design (estates with a pending motion only) |
 | Collections / detainers (General Sessions) | edockets.us | page XHR + PDFs | **LIVE** (`sessions_dockets.py`); tenant/defendant names never stored for detainer cases |
 | Estate-owned property (standing inventory) | County GIS `Live_Parcels` owner records (`OWNERNAME1/2` + `MASTNAME` C/O lines) | ArcGIS REST LIKE pre-filter + word-boundary classifier | **LIVE** (`estate_parcels.py`; ~254 parcels: heirs 219, heirs_coowner 16, estate 11, executor_admin 8) |
@@ -244,12 +244,18 @@ Sites, in the order they're tried:
 Cloudflare Turnstile. Not built regardless of the terms decision above. `internetpostings.com`
 (Attorney's Title Group, LLC; posts Foundation Legal Group fka Wilson & Associates notices — the
 single largest unbuilt block, ~20% of notices) sits behind a Terms-of-Service checkbox. **Jarrod
-accepted those terms himself, in his own browser, on 2026-10-06.** That covers his own manual use;
-the daily scraper would have to submit the acceptance itself on every run, which is pending his
-explicit OK (see Decisions still open). The terms (Attorney's Title Group ToS sec. 7) tell
-prospective bidders not to "contact the borrowers" — read that before working any lead sourced
-from this site. A draft site module (`scraper/internetpostings_site.py`) exists in the working
-tree but is **not** wired into `foreclosure_notices.py` or `scrape.yml`.
+accepted those terms himself, in his own browser, on 2026-10-06**, and then, in chat the same
+day, explicitly authorized the daily scraper to submit that same acceptance on his behalf on every
+run ("Yes, accept on my behalf daily"), after being told the terms bar bidders from contacting
+borrowers. **Now LIVE** as site 7 in `scraper/internetpostings_site.py`: GET the gate, POST the
+site's own checkbox, POST "View Property Listings" — no account, login, cookie or CAPTCHA. The
+terms text is pinned by SHA-256 (`AUTHORIZED_TERMS_SHA256`); if it changes the scraper refuses to
+accept and the site fails for the day (reason recorded in scrape_log notes) until Jarrod re-reads
+the terms and the hash is updated. A password field or CAPTCHA also fails it. The full accepted
+text is archived outside the repo (`terms_of_service_2026-10-06.txt` in the build scratch folder).
+The terms (Attorney's Title Group ToS sec. 7) tell prospective bidders not to "contact the
+borrowers" — every row sourced there carries a `[internetpostings ToS §7 …]` tag in its
+description. First pull: 7 Hamilton notices, all Foundation Legal, none on any other site.
 `tnforeclosurenotices.com` — same pattern (Agree-link gate), not built.
 
 Cancelled/withdrawn notices get `case_type='foreclosure_notice_cancelled'` (scored 0 — audit trail
@@ -458,7 +464,8 @@ already flagged and never enumerates or crawls the portal. Mechanics verified li
 6. **Hosting:** public repo, public dashboard, "just for our own information," with the option to
    flip to private once the build is complete.
 7. **internetpostings.com terms:** Jarrod accepted the site's Terms of Service himself, in his own
-   browser, on 2026-10-06. (Its terms, Attorney's Title Group ToS sec. 7, tell prospective bidders
+   browser, on 2026-10-06, and explicitly authorized the daily scraper to submit that acceptance on
+   his behalf every run (in chat, same day, after being told about the borrower clause). (Its terms, Attorney's Title Group ToS sec. 7, tell prospective bidders
    not to trespass, disturb occupants or "contact the borrowers" — read before contacting anyone
    on a lead sourced there.)
 8. **Estate-owned parcels and municipal liens** (2026-10-06): both built and wired into the daily
@@ -466,20 +473,13 @@ already flagged and never enumerates or crawls the portal. Mechanics verified li
 
 ## Decisions still open
 
-1. **internetpostings.com automation:** Jarrod's 2026-10-06 acceptance was manual, in his own
-   browser. Automated access needs his **explicit OK for the daily scraper to submit that
-   acceptance itself on each run** — not given yet, so not wired. The draft
-   `scraper/internetpostings_site.py` in the working tree pins the exact terms text by hash and
-   refuses to proceed if the terms change, a password field or a CAPTCHA appears; its docstring
-   describes an in-chat authorization that is **not** recorded here — confirm with Jarrod before
-   wiring it into `foreclosure_notices.py` / `scrape.yml`.
-2. **municipal_liens terms residue:** the archived (no longer linked) GovCollect terms carry a
+1. **municipal_liens terms residue:** the archived (no longer linked) GovCollect terms carry a
    general "reproduce, duplicate, copy, sell, resell or exploit any portion of the Service"
    clause — Jarrod's call whether that changes anything (nothing currently linked prohibits
    automated access).
-3. **Code enforcement footprint:** current source is City of Chattanooga only. Decide whether
+2. **Code enforcement footprint:** current source is City of Chattanooga only. Decide whether
    other Hamilton County municipalities matter (needs new recon; no known equivalent dataset yet).
-4. **PII on a public site:** the dashboard now publishes owner names, mailing addresses, and
+3. **PII on a public site:** the dashboard now publishes owner names, mailing addresses, and
    distressed-property signals across eight live sources (now including heirs/C-O contact names
    from estate-owned parcels). Reconsider public hosting once the build is complete, per Jarrod's
    original option to flip it private.
@@ -494,8 +494,6 @@ already flagged and never enumerates or crawls the portal. Mechanics verified li
    build Assessor card URLs from the raw padded GIS fields (or `RecordsOnl`), because the card
    site resolves only the padded form — this also fixes `estate_parcels`' 4 broken condo
    `source_url`s.
-2. **internetpostings.com** — wire `internetpostings_site.py` into `foreclosure_notices.py` and
-   the workflow only after Jarrod's explicit OK for automated acceptance (Decisions still open #1).
 3. **City tax arrears are missing from the project** (the Trustee file has none for District 1).
    Proposal (not built): in `municipal_liens.apply_result`, upsert `tax_delinquent` rows from the
    already-parsed city tax + stormwater per year (`dedupe_key city_tax:<parcel_id>:<year>`,
@@ -728,11 +726,11 @@ chattanooga-intel/
 │   ├── code_enforcement.py     # LIVE — City ArcGIS Hub CSV (rewritten; old Socrata endpoint dead)
 │   ├── probate_dockets.py      # LIVE — Chancery Part 2 motion dockets
 │   ├── sessions_dockets.py     # LIVE — edockets.us General Sessions (US-runner only)
-│   ├── foreclosure_notices.py  # LIVE — 6 posting sites, merged
+│   ├── foreclosure_notices.py  # LIVE — 7 posting sites, merged
 │   ├── estate_parcels.py       # LIVE — county GIS owner-name estate/heirs/executor inventory
 │   ├── enrich_assessor.py      # LIVE — county GIS parcel/address/point/owner resolution
 │   ├── municipal_liens.py      # LIVE — City tax portal municipal-lien enrichment (after enrich_assessor)
-│   ├── internetpostings_site.py  # DRAFT, not wired — 7th foreclosure site, awaiting owner OK
+│   ├── internetpostings_site.py  # LIVE — site 7 for foreclosure_notices (owner-authorized terms acceptance)
 │   ├── skip_trace.py, contacts_store.py  # in progress — DealMachine skip trace into an encrypted
 │   │                                     # contact store (data/contacts.db.enc); manual workflow only
 │   └── requirements.txt
@@ -746,8 +744,8 @@ chattanooga-intel/
 `enrich_assessor.py`, `estate_parcels.py`, `municipal_liens.py`, `sessions_dockets.py`, the
 `court_records.py` deletion, `dashboard/index.html`, CLAUDE.md). The `.gitignore` (contacts
 store) and `requirements.txt` (`cryptography`) edits belong to the skip-trace workstream.
-`internetpostings_site.py` (awaiting Jarrod's OK, Decisions still open #1 — its docstring's
-"authorized in chat" claim is unconfirmed) and the skip-trace workstream (`skip_trace.py`,
+`internetpostings_site.py` (committed separately once Jarrod's in-chat authorization was confirmed)
+and the skip-trace workstream (`skip_trace.py`,
 `contacts_store.py`, `scripts/`, `dev_skiptrace.yml`, a secrets-using workflow that commits to
 master) were **not** reviewed in this release: stage paths explicitly, never `git add -A`.
 

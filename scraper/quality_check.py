@@ -108,7 +108,7 @@ SOURCES: dict[str, SourceCheck] = {
         threshold_ratio=0.30,
         blocking=False,
         allow_zero=True,
-        note="Additive feed across 6 independent posting sites; one site being blocked or down "
+        note="Additive feed across 7 independent posting sites; one site being blocked or down "
              "doesn't zero out the others, so a low day is normal variation, not a broken pipeline.",
     ),
     "estate_parcels": SourceCheck(

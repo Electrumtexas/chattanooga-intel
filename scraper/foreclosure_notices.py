@@ -1,19 +1,19 @@
 """
-Hamilton County trustee foreclosure-sale notices — ingested from SIX
+Hamilton County trustee foreclosure-sale notices — ingested from SEVEN
 independent third-party posting sites, additively, into court_records as
 case_type='foreclosure_notice'.
 
-Why six sites at all
---------------------
+Why seven sites at all
+----------------------
 Tennessee foreclosures are non-judicial: state law requires 3 consecutive
 weeks of newspaper publication before a sale, not a county court filing.
 Each law firm/trustee picks ONE third-party site to mirror its newspaper ad
-digitally, so the six sites carry almost entirely disjoint sets of Hamilton
+digitally, so the seven sites carry almost entirely disjoint sets of Hamilton
 notices (a prior cross-check of 40 unique Hamilton notices over one month
 found the first four sites below covered all 40 with zero overlap between
 them). This module is therefore an ADDITIVE multi-source ingest, not a
 "pick the best site" scraper — every site's function runs independently
-(a failure in one never stops the others; main() only raises if all six
+(a failure in one never stops the others; main() only raises if all seven
 fail), and a cross-source merge pass collapses the SAME real-world sale
 when it happens to appear on more than one site (see "Merge-key design"
 below).
@@ -80,7 +80,7 @@ assumed from the task brief) — one specific finding per site:
    brief's warning that this WP REST endpoint occasionally returns
    malformed JSON; a bad response is skipped (this whole site's run
    fails, but the exception is caught at the main()-level per-site try/
-   except so the other five sites are unaffected either way). Keyed on
+   except so the other sites are unaffected either way). Keyed on
    the REST `id` (not slug — slugs seen ending in `__trashed`).
 
 5. capitalcitypostings.com — static HTML, class C terms (the task brief's
@@ -113,16 +113,29 @@ assumed from the task brief) — one specific finding per site:
    `/wp-json/wp/v2/media` exists and could support incremental detection
    but isn't used here — see "Change detection" below.
 
-internetpostings.com was explicitly NOT built here — it sits behind a
-Terms-of-Service click-through checkbox that only the account holder (the
-task owner) can accept; ground rules for this build forbid completing any
-consent gate. Flagged as a manual-decision item in the build report, not
-attempted.
+7. internetpostings.com — added 2026-10-06, implemented in its own module
+   `internetpostings_site.py` (read that docstring before touching it).
+   Attorney's Title Group, LLC posts Foundation Legal Group, LLP (fka
+   Wilson & Associates) notices there, and no other site carries them (7
+   Hamilton rows, 0 overlap with the six sites above on the first live
+   run). It's an ASP.NET WebForms page behind a Terms-of-Service checkbox.
+   Class B terms: the information is for informational purposes only, there's
+   no automated-access/copying/reuse clause, and Section 7 tells prospective
+   bidders not to contact borrowers (verbatim fragment and summary in
+   internetpostings_site.py). OWNER AUTHORIZATION: on 2026-10-06 Jarrod
+   accepted these terms himself in his own browser, then authorized the
+   daily scraper to submit that same acceptance (the checkbox postback plus
+   "View Property Listings") on his behalf on every run. That covers
+   nothing else: no accounts, logins or CAPTCHAs. The scraper pins the
+   accepted terms by SHA-256 and refuses to accept changed terms until the
+   owner re-reviews them. One all-states grid is filtered client-side to
+   TN/Hamilton, and there's one `Document.ashx` PDF per notice (doc-cached
+   under `foreclosure_notices:internetpostings:doc_cache`).
 
 Merge-key design (the single most important decision in this module)
 --------------------------------------------------------------------
 Every normalized record — regardless of which site it came from — gets a
-`dedupe_key`, computed the SAME way for all six sites, in this priority
+`dedupe_key`, computed the SAME way for all seven sites, in this priority
 order:
 
   1. `foreclosure_notice:bp:<book>-<page>` when a Register of Deeds book
@@ -154,7 +167,8 @@ groups all of them by this key. For a key seen on more than one site, the
 group's records are ranked by (a) how many of a fixed set of "value
 fields" are populated (more complete wins), then (b) a fixed SITE_PRIORITY
 order that puts the three class-A sites first, then foreclosuretennessee
-(owner-approved, internal-use-only), then the two class-C sites last —
+(owner-approved, internal-use-only), then internetpostings (class B,
+owner-accepted terms), then the two class-C sites last —
 this is exactly the task owner's standing instruction to "prefer a cleaner
 source for the same record when one exists." The winning record's blank
 fields are then backfilled from the other group members (so a class-A
@@ -166,7 +180,7 @@ MORE THAN ONE DISTINCT SITE, in which case it becomes `'multi'`;
 `source_url` stays the winning record's own URL, and every OTHER
 contributing site's short name is appended to `description` as
 "— also posted: <site>, <site>". This is deliberately a per-RUN merge
-(each daily run re-collects all six sites' current small feeds and
+(each daily run re-collects all seven sites' current small feeds and
 re-merges from scratch) rather than a persisted merge state — see
 "Change detection" below for why that's safe here.
 
@@ -220,16 +234,16 @@ trail. The row is kept, never deleted.
 Change detection — per-notice document caching, not a full-refresh skip
 --------------------------------------------------------------------------
 Unlike tax_sale.py/probate_dockets.py (one small county PDF, cheap to
-re-parse every run), four of these six sites require a SEPARATE per-notice
-PDF fetch to get book/page and grantor name (betterchoicenotices,
-nwpostingservices, capitalcitypostings, tennesseepostings all need one PDF
-GET per row; foreclosuretennessee needs one detail-page GET per
+re-parse every run), six of these seven sites require a SEPARATE per-notice
+fetch to get book/page and grantor name (betterchoicenotices,
+nwpostingservices, capitalcitypostings, tennesseepostings, internetpostings
+all need one PDF GET per row; foreclosuretennessee needs one detail-page GET per
 submissionID). Re-fetching every notice's PDF from a small third-party
 site EVERY day — most of which are notices already seen yesterday — would
 not be "a small daily delta," it would be a full daily bulk pull of
 someone else's PDF hosting, which the ground rules for this build
 explicitly want avoided ("small daily deltas, not bulk historical
-pulls... don't hammer any site"). So each of those five sites keeps a
+pulls... don't hammer any site"). So each of those six sites keeps a
 small, permanent cache in `source_state` (`foreclosure_notices:<site>:
 doc_cache`, a JSON dict keyed by notice id or PDF URL) of the
 already-extracted book/page/grantor/trustee/native-parcel fields; a
@@ -245,9 +259,9 @@ source_state can't grow unbounded.
 
 Amount is always None
 ----------------------
-None of the six sites' notices state a dollar figure that means what
+None of the seven sites' notices state a dollar figure that means what
 `court_records.amount` means elsewhere in this schema (a debt or judgment
-amount). A "minimum bid" dollar figure was not observed on any of the six
+amount). A "minimum bid" dollar figure was not observed on any of the seven
 sites' text/tables at verification time; if a future notice does print
 one, it is NOT written to `amount` without saying explicitly which site
 and field it came from, per the task's ground rules.
@@ -296,6 +310,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from db import get_connection, get_state, log_scrape, set_state, upsert_parcel, upsert_record
+from internetpostings_site import fetch_internetpostings, parse_internetpostings  # site 7, own module (see its docstring)
 from parcel_utils import format_parcel_id, normalize_address
 
 REQUEST_HEADERS = {
@@ -1027,7 +1042,7 @@ def fetch_tnlegalpub(conn) -> tuple[list, dict]:
     except ValueError as e:
         # The brief flagged this WP REST endpoint as occasionally returning
         # invalid JSON — this whole site's run fails for today (caught at
-        # the main()-level per-site try/except), the other five are unaffected.
+        # the main()-level per-site try/except), the other sites are unaffected.
         raise RuntimeError(f"tnlegalpub: response body was not valid JSON: {e}")
     if not isinstance(items, list):
         items = []
@@ -1253,13 +1268,16 @@ def parse_tennesseepostings(enriched: list) -> tuple[list[dict], dict]:
 # Preference order for which site "wins" a tie (and thus supplies
 # source_portal/source_url/case_number when a key is only seen once):
 # class-A sites first, then foreclosuretennessee (owner-approved,
-# internal-use-only), then the two class-C sites last — matching the task
-# owner's standing instruction to prefer a cleaner source when available.
+# internal-use-only), then internetpostings (class B, informational-purposes-
+# only terms, owner-accepted 2026-10-06), then the two class-C sites last —
+# matching the task owner's standing instruction to prefer a cleaner source
+# when available.
 SITE_PRIORITY = [
     "betterchoicenotices",
     "nwpostingservices",
     "tnlegalpub",
     "foreclosuretennessee",
+    "internetpostings",
     "capitalcitypostings",
     "tennesseepostings",
 ]
@@ -1346,6 +1364,11 @@ def _describe(rec: dict) -> str:
     other = rec.get("_other_sites") or []
     if other:
         desc += f" — also posted: {', '.join(other)}"
+    if rec.get("source_site") == "internetpostings" or "internetpostings" in other:
+        # internetpostings.com ToS sec. 7 tells prospective bidders not to
+        # contact borrowers; the owner accepted those terms knowingly
+        # (2026-10-06), so flag it on the lead itself, not just in docs.
+        desc += " [internetpostings ToS §7: bidders not to contact borrowers]"
     return desc[:600]
 
 
@@ -1396,6 +1419,7 @@ SITES = [
     ("tnlegalpub", fetch_tnlegalpub, parse_tnlegalpub),
     ("capitalcitypostings", fetch_capitalcitypostings, parse_capitalcitypostings),
     ("tennesseepostings", fetch_tennesseepostings, parse_tennesseepostings),
+    ("internetpostings", fetch_internetpostings, parse_internetpostings),
 ]
 
 
@@ -1439,6 +1463,11 @@ def main() -> None:
         f"total_raw_records={merge_stats['total_raw_records']}, "
         f"cancelled={cancelled_count}, failed_sites={failed_sites}"
     )
+    # Keep a short reason per failed site — e.g. internetpostings refuses to
+    # accept changed Terms of Service, and that should be visible in
+    # scrape_log, not only in the public Actions stdout.
+    for name in failed_sites:
+        notes += f"; {name}_error={site_results[name]['error'][:200]}"
     log_scrape(conn, "foreclosure_notices", record_count=count, status="ok", notes=notes)
     conn.commit()
     print(f"foreclosure_notices: upserted {count} unique notices. {notes}")
