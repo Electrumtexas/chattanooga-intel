@@ -1,11 +1,10 @@
 """
 Hamilton County General Sessions Court civil dockets, via edockets.us.
 
-This is a separate, independently-scheduled source from the still-
-unimplemented court_records.py skeleton (that one targets four *different*
-portals — TN Case Finder, Civitek OCRS, hamiltonclerk.com probate, and the
-Clerk & Master tax-sale docket, the last of which now actually lives in
-tax_sale.py). This module writes into the SAME shared `court_records`
+This is an independently-scheduled source (the old Phase 1
+court_records.py skeleton that once sat beside it was deleted on 2026-10-06;
+its tax-sale target now lives in tax_sale.py and its other portals were
+wrong-state or gated — see CLAUDE.md). This module writes into the SAME shared `court_records`
 table under its own scrape_log source name ("sessions_dockets", distinct
 from the table name) — the pattern tax_sale.py already established for a
 PDF-driven portal that happens to feed the shared table.

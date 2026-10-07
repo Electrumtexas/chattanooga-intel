@@ -29,7 +29,10 @@ settings rather than one global threshold:
                   Sessions only publishes UPCOMING dockets (frequently an
                   empty list), Chancery probate dockets fall on alternating
                   Mondays, and the annual tax-sale PDF disappears from the
-                  county site once that year's sale is over.
+                  county site once that year's sale is over. Sources that
+                  guard their own writes (estate_parcels refuses to write on
+                  a broken sweep) or whose count is a capped work queue
+                  (municipal_liens, enrich_assessor) are non-blocking too.
 
   allow_zero=True Zero is a legitimate reading for that source, so it's
                   recorded as a normal run. That matters beyond the pass/
@@ -108,6 +111,22 @@ SOURCES: dict[str, SourceCheck] = {
         note="Additive feed across 6 independent posting sites; one site being blocked or down "
              "doesn't zero out the others, so a low day is normal variation, not a broken pipeline.",
     ),
+    "estate_parcels": SourceCheck(
+        threshold_ratio=0.80,
+        blocking=False,
+        note="Standing inventory (~254) of parcels the county owner record titles to heirs/an estate/an executor; "
+             "moves by a handful a week, so < 80% of baseline means a broken sweep. Non-blocking: the module itself "
+             "refuses to write on a broken sweep (health check, page cap, < max(50, 50% of tracked)), so yesterday's "
+             "rows stay correct; a throttled skip day still logs the tracked count.",
+    ),
+    "municipal_liens": SourceCheck(
+        threshold_ratio=0.30,
+        blocking=False,
+        allow_zero=True,
+        note="Capped per-parcel enrichment of already-flagged parcels (City tax portal); the count is parcels checked "
+             "this run and tracks the due-queue and the run's time budget, not the portal. It exits non-zero and logs "
+             "status='error' on its own if the portal health check or its search-sanity guard fails.",
+    ),
 }
 
 
@@ -133,9 +152,20 @@ def check_source(conn, source: str, config: SourceCheck | None = None) -> tuple[
     if run is None:
         return True, f"{source}: no run logged yet — skipping (nothing scraped this session)"
 
-    baseline = trailing_baseline(conn, source, days=BASELINE_DAYS)
     count = run["record_count"]
     tag = "" if config.blocking else " (non-blocking)"
+
+    # A module that logged its own status='error' (health check failed, sweep
+    # aborted, ...) has already judged the run: keep that status instead of
+    # overwriting it with 'ok' (which the no-baseline / zero-baseline
+    # branches below would otherwise do, so a permanently blocked source
+    # would read OK forever and its 0 would become the baseline). Reported as
+    # [WARN] for non-blocking sources, [FAIL] for blocking ones. Today only
+    # non-blocking modules log 'error'; the blocking ones crash instead.
+    if run["status"] == "error":
+        return False, f"{source}: the module logged status='error' for its latest run ({count} records){tag}"
+
+    baseline = trailing_baseline(conn, source, days=BASELINE_DAYS)
 
     if baseline is None:
         _mark(conn, run, "ok", "first run — no baseline to compare against")

@@ -641,7 +641,7 @@ def resolve_addresses(conn, stats: dict, limit: int) -> dict:
         if pid:
             upsert_parcel_from_gis(conn, pid, feat["attributes"], feat.get("geometry"))
             for row in rows:
-                upsert_record(conn, row["table"], row["dedupe_key"], parcel_id=pid, resolution_method="address_match")
+                upsert_record(conn, row["table"], row["dedupe_key"], touch_last_seen=False, parcel_id=pid, resolution_method="address_match")
                 attempts_by_table[row["table"]].pop(row["dedupe_key"], None)
                 counters["matched"] += 1
             continue
@@ -710,7 +710,7 @@ def resolve_points(conn, stats: dict, limit: int) -> dict:
                 pid = format_parcel_id(attrs.get("MAP"), attrs.get("GROUP_"), attrs.get("PARCEL"))
                 if pid:
                     upsert_parcel_from_gis(conn, pid, attrs, containing[0].get("geometry"))
-                    upsert_record(conn, "code_enforcement", row["dedupe_key"], parcel_id=pid, resolution_method="point_in_parcel")
+                    upsert_record(conn, "code_enforcement", row["dedupe_key"], touch_last_seen=False, parcel_id=pid, resolution_method="point_in_parcel")
                     attempts.pop(row["dedupe_key"], None)
                     counters["matched"] += 1
                     continue
@@ -778,7 +778,7 @@ def resolve_owner_fallback(conn, stats: dict, limit: int) -> dict:
                 pid = format_parcel_id(attrs.get("MAP"), attrs.get("GROUP_"), attrs.get("PARCEL"))
                 if pid:
                     upsert_parcel_from_gis(conn, pid, attrs, feat.get("geometry"))
-                    upsert_record(conn, "court_records", row["dedupe_key"], parcel_id=pid, resolution_method="owner_name_fallback")
+                    upsert_record(conn, "court_records", row["dedupe_key"], touch_last_seen=False, parcel_id=pid, resolution_method="owner_name_fallback")
                     attempts.pop(row["dedupe_key"], None)
                     counters["matched"] += 1
                     continue

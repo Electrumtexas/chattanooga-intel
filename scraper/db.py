@@ -228,6 +228,7 @@ def upsert_record(
     table: str,
     dedupe_key: str,
     keep_existing: tuple[str, ...] = (),
+    touch_last_seen: bool = True,
     **fields,
 ) -> None:
     """Shared upsert for the source tables, keyed on dedupe_key.
@@ -236,6 +237,14 @@ def upsert_record(
     never overwritten. Scrapers that can't resolve a parcel themselves pass
     keep_existing=("parcel_id", "resolution_method") so a daily re-scrape
     doesn't undo a match enrich_assessor.py made on an earlier run.
+
+    `touch_last_seen=False` updates an existing row WITHOUT moving its
+    last_seen_at. last_seen_at means "the source still lists this row", and
+    build_unified.mark_unlisted() relies on it to drop rows that left a
+    full-snapshot source; a parcel_id backfill (enrich_assessor's address /
+    point / owner-name matches, estate_parcels' probate fill) is not a
+    sighting, so those callers pass False. (Found 2026-10-06: backfills had
+    bumped 156 code_enforcement rows on days the city CSV was unchanged.)
 
     `table` is always a hardcoded literal from a caller in this codebase
     (never user/request input), so building the statement with an f-string
@@ -257,10 +266,16 @@ def upsert_record(
         set_clause = ",".join(
             f"{k} = COALESCE({k}, ?)" if k in keep_existing else f"{k} = ?" for k in fields
         )
-        conn.execute(
-            f"UPDATE {table} SET {set_clause}, last_seen_at = ? WHERE dedupe_key = ?",
-            [*fields.values(), now, dedupe_key],
-        )
+        if touch_last_seen:
+            conn.execute(
+                f"UPDATE {table} SET {set_clause}, last_seen_at = ? WHERE dedupe_key = ?",
+                [*fields.values(), now, dedupe_key],
+            )
+        elif fields:
+            conn.execute(
+                f"UPDATE {table} SET {set_clause} WHERE dedupe_key = ?",
+                [*fields.values(), dedupe_key],
+            )
 
 
 def log_scrape(

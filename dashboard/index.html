@@ -186,6 +186,11 @@ table.verify-table tbody tr.selected { background: var(--accent-soft); }
 .signal-group h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin: 0 0 8px; }
 .signal-row { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; font-size: 12.5px; display: flex; justify-content: space-between; gap: 10px; }
 .signal-row a { font-size: 11px; }
+.why-box { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 8px 12px; }
+.why-box .k { font-size: 10.5px; text-transform: uppercase; color: var(--text-faint); letter-spacing: 0.04em; }
+.why-box ul { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; }
+.why-box li { margin: 2px 0; }
+.why-box .fams { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 
 .leaflet-popup-content { font-family: 'Inter', sans-serif; font-size: 12.5px; }
 
@@ -268,6 +273,13 @@ table.verify-table tbody tr.selected { background: var(--accent-soft); }
 const TIER_COLOR = { triple_threat: "#DC3D43", multi_factor: "#E08A1E", single_signal: "#2F6FED" };
 const TIER_LABEL = { triple_threat: "Triple Threat", multi_factor: "Multi-Factor", single_signal: "Single Signal" };
 const SOURCE_LABEL = { court_records: "Court", tax_delinquent: "Tax", code_enforcement: "Code" };
+const FAMILY_LABEL = {
+  foreclosure: "Foreclosure", tax_sale: "Tax sale", tax_delinquency: "Tax delinquent", code_violation: "Code violations",
+  estate: "Estate/probate", lien: "Lien", eviction_collections: "Eviction/collections", other_court: "Court record",
+};
+// Owner types that are not private sellers (used only when a row has no
+// `acquirable` flag of its own to read — see isAcquirable()).
+const NON_PRIVATE_OWNER_TYPES = new Set(["government", "institutional"]);
 
 const COMMON_COLUMNS = [
   { key: "situs_address", label: "Address", mono: true },
@@ -292,7 +304,9 @@ const COMMON_COLUMNS = [
 const SECTIONS = {
   overview: {
     key: "overview", label: "Overview / All Leads", dataUrl: "unified_leads.json",
-    extraColumns: [],
+    extraColumns: [
+      { key: "next_sale_date", label: "Next Sale", mono: true },
+    ],
   },
   court_records: {
     key: "court_records", label: "Court Records", dataUrl: "court_records.json",
@@ -334,10 +348,30 @@ const PAGE_SIZE = 100;
 
 const state = {
   datasets: {}, meta: null, activeSection: "overview", mode: "prospect",
-  filters: { minScore: "", maxScore: "", sources: new Set(), city: "", zip: "", dateFrom: "", dateTo: "", search: "", entityOnly: false, absenteeOnly: false },
+  filters: { minScore: "", maxScore: "", sources: new Set(), city: "", zip: "", dateFrom: "", dateTo: "", search: "", entityOnly: false, absenteeOnly: false, privateOnly: false },
   selectedIds: new Set(), sortKey: "score", sortDir: "desc", page: 0,
-  map: null, markerLayer: null,
+  map: null, markerLayer: null, leadIndex: null,
 };
+
+// The score explanation fields (score_breakdown, family_scores, acquirable,
+// distress_score, next_sale_date) live only on unified_leads.json rows, to
+// keep the per-source files lean; a per-source row reads them from its
+// parcel's unified lead.
+function leadFor(row) {
+  if (!row) return null;
+  if (row.score_breakdown || row.family_scores) return row;
+  if (!row.parcel_id) return null;
+  if (!state.leadIndex) {
+    state.leadIndex = new Map();
+    (state.datasets.overview || []).forEach((l) => { if (l.parcel_id) state.leadIndex.set(l.parcel_id, l); });
+  }
+  return state.leadIndex.get(row.parcel_id) || null;
+}
+function isAcquirable(row) {
+  const lead = leadFor(row);
+  if (lead && typeof lead.acquirable === "boolean") return lead.acquirable;
+  return !NON_PRIVATE_OWNER_TYPES.has(row.owner_type);
+}
 
 function resetPage() { state.page = 0; }
 
@@ -403,6 +437,7 @@ async function loadAll() {
     SECTION_ORDER.map((key) => fetch(SECTIONS[key].dataUrl).then((r) => r.json()).catch(() => []))
   );
   SECTION_ORDER.forEach((key, i) => { state.datasets[key] = entries[i]; });
+  state.leadIndex = null;
   try { state.meta = await fetch("meta.json").then((r) => r.json()); } catch (e) { state.meta = null; }
 }
 
@@ -429,6 +464,7 @@ function matchesFilters(row) {
   }
   if (f.entityOnly && !row.is_entity_owner) return false;
   if (f.absenteeOnly && !row.is_absentee) return false;
+  if (f.privateOnly && !isAcquirable(row)) return false;
   return true;
 }
 
@@ -438,8 +474,11 @@ function sortRows(rows) {
   const key = state.sortKey, dir = state.sortDir === "asc" ? 1 : -1;
   return rows.slice().sort((a, b) => {
     let av = a[key], bv = b[key];
-    if (av === null || av === undefined) av = "";
-    if (bv === null || bv === undefined) bv = "";
+    // Empty values always sort last, whatever the direction — otherwise an
+    // ascending sort on a sparse column (Next Sale: ~16.5k nulls) shows only blanks first.
+    const aEmpty = av === null || av === undefined || av === "";
+    const bEmpty = bv === null || bv === undefined || bv === "";
+    if (aEmpty || bEmpty) return aEmpty === bEmpty ? 0 : (aEmpty ? 1 : -1);
     if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir;
     return String(av).localeCompare(String(bv)) * dir;
   });
@@ -480,7 +519,7 @@ function renderSegments() {
   el.querySelectorAll(".seg-name").forEach((btn) => btn.addEventListener("click", () => {
     const seg = loadSegments()[Number(btn.dataset.idx)];
     if (!seg) return;
-    state.filters = Object.assign(state.filters, seg.filters, { sources: new Set(seg.filters.sources || []) });
+    state.filters = Object.assign(state.filters, { privateOnly: false }, seg.filters, { sources: new Set(seg.filters.sources || []) });
     resetPage();
     renderAll();
   }));
@@ -559,6 +598,7 @@ function renderFilterBar() {
     <div class="field search-field"><label>Search owner / address</label><input type="text" id="f-search" placeholder="Smith, Main St..." value="${esc(f.search)}"></div>
     <div class="field"><label>&nbsp;</label><button type="button" class="chip-toggle ${f.entityOnly ? "active" : ""}" id="f-entity">Entity owner</button></div>
     <div class="field"><label>&nbsp;</label><button type="button" class="chip-toggle ${f.absenteeOnly ? "active" : ""}" id="f-absentee">Absentee owner</button></div>
+    <div class="field"><label>&nbsp;</label><button type="button" class="chip-toggle ${f.privateOnly ? "active" : ""}" id="f-private" title="Hide government and institutional owners, and exempt parcels with no current tax bill">Private owners</button></div>
     <button class="reset-btn" id="f-reset" title="Reset filters">Reset ✕</button>
   `;
   const onFilterChange = () => { resetPage(); renderResults(); };
@@ -571,13 +611,14 @@ function renderFilterBar() {
   document.getElementById("f-search").addEventListener("input", (e) => { f.search = e.target.value; onFilterChange(); });
   document.getElementById("f-entity").addEventListener("click", () => { f.entityOnly = !f.entityOnly; renderFilterBar(); onFilterChange(); });
   document.getElementById("f-absentee").addEventListener("click", () => { f.absenteeOnly = !f.absenteeOnly; renderFilterBar(); onFilterChange(); });
+  document.getElementById("f-private").addEventListener("click", () => { f.privateOnly = !f.privateOnly; renderFilterBar(); onFilterChange(); });
   bar.querySelectorAll("[data-source]").forEach((btn) => btn.addEventListener("click", () => {
     const s = btn.dataset.source;
     if (f.sources.has(s)) f.sources.delete(s); else f.sources.add(s);
     renderFilterBar(); onFilterChange();
   }));
   document.getElementById("f-reset").addEventListener("click", () => {
-    state.filters = { minScore: "", maxScore: "", sources: new Set(), city: "", zip: "", dateFrom: "", dateTo: "", search: "", entityOnly: false, absenteeOnly: false };
+    state.filters = { minScore: "", maxScore: "", sources: new Set(), city: "", zip: "", dateFrom: "", dateTo: "", search: "", entityOnly: false, absenteeOnly: false, privateOnly: false };
     renderFilterBar(); onFilterChange();
   });
 }
@@ -802,8 +843,24 @@ document.getElementById("export-csv").addEventListener("click", () => {
 });
 
 /* ---------------- Detail modal ---------------- */
+function whyBlock(row) {
+  const lead = leadFor(row);
+  if (!lead || !(lead.score_breakdown || []).length) return "";
+  const fams = Object.entries(lead.family_scores || {});
+  const cutoff = state.meta && state.meta.tier_min_raw != null ? state.meta.tier_min_raw : 15;
+  // build_unified caps a non-acquirable parcel's tier at single_signal.
+  const strongTitle = lead.acquirable === false ? "strong signal (tier capped: not a private seller)" : "counts toward the tier";
+  return `
+    <div class="why-box">
+      <div class="k">Why this score${lead !== row ? " (parcel's combined lead)" : ""}</div>
+      <ul>${lead.score_breakdown.map((s) => `<li>${esc(s)}</li>`).join("")}</ul>
+      ${fams.length ? `<div class="fams">${fams.map(([f, v]) => `<span class="badge ${v >= cutoff ? "flag" : "src"}" title="${v >= cutoff ? strongTitle : "below the tier cutoff"}">${esc(FAMILY_LABEL[f] || f)} ${Number(v).toFixed(0)}</span>`).join("")}</div>` : ""}
+    </div>`;
+}
+
 function openDetail(row) {
   const root = document.getElementById("modal-root");
+  const lead = leadFor(row);
   const signalGroups = Object.entries(row.signals || {}).map(([source, items]) => `
     <div class="signal-group">
       <h4>${esc(SOURCE_LABEL[source] || source)} (${items.length})</h4>
@@ -832,7 +889,9 @@ function openDetail(row) {
             ${tierBadge(row.tier)} ${sourceBadges(row.sources)}
             ${row.is_absentee ? '<span class="badge flag">Absentee</span>' : ""}
             ${row.is_entity_owner ? '<span class="badge flag">Entity</span>' : ""}
+            ${lead && lead.acquirable === false ? '<span class="badge src" title="Government / institutional owner, or exempt parcel with no current tax bill">Not a private seller</span>' : ""}
           </div>
+          ${whyBlock(row)}
           <div class="modal-grid">
             <div><div class="k">Parcel ID</div><div class="v mono">${esc(row.parcel_id || "unresolved")}</div></div>
             <div><div class="k">City / Zip</div><div class="v">${esc(row.city || "—")} ${esc(row.zip || "")}</div></div>
@@ -840,6 +899,8 @@ function openDetail(row) {
             <div><div class="k">Owner Type</div><div class="v">${esc(row.owner_type || "—")}</div></div>
             <div><div class="k">Total $ Exposure</div><div class="v mono">${fmtMoney(row.total_exposure)}</div></div>
             <div><div class="k">Completeness</div><div class="v">${fmtPct(row.completeness_score)} ${(row.completeness_missing||[]).length ? "(missing: " + esc(row.completeness_missing.join(", ")) + ")" : ""}</div></div>
+            ${lead ? `<div><div class="k">Next Sale</div><div class="v mono">${esc(lead.next_sale_date || "—")}</div></div>` : ""}
+            ${lead && lead.distress_score != null && lead.distress_score !== lead.score ? `<div><div class="k">Distress before owner adjustment</div><div class="v mono">${Number(lead.distress_score).toFixed(1)}</div></div>` : ""}
           </div>
           ${signalGroups || '<div style="color:var(--text-faint)">No detailed per-signal records in this file — see the relevant section table.</div>'}
         </div>

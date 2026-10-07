@@ -4,11 +4,6 @@ name: Scrape and deploy
   schedule:
     - cron: "0 9 * * *"  # 09:00 UTC = 03:00/04:00 Central, after portals' overnight batch updates
   workflow_dispatch:
-    inputs:
-      lookback_days:
-        description: "How many days back scrapers should search (for backfilling a missed run). Not yet consumed by any scraper — court_records.py will read LOOKBACK_DAYS once Phase 1 is implemented."
-        required: false
-        default: "1"
 
 permissions:
   contents: read
@@ -29,18 +24,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r scraper/requirements.txt
-
-      # --- Phase 1: court records — NOT YET IMPLEMENTED ---------------------
-      # Blocked on live portal reconnaissance (TN Case Finder, Civitek OCRS,
-      # hamiltonclerk.com probate, cmpti.hamiltontn.gov tax-sale docket).
-      # scraper/court_records.py currently raises NotImplementedError by
-      # design. Uncomment once that reconnaissance + implementation is done.
-      # - name: Scrape court records
-      #   working-directory: scraper
-      #   env:
-      #     LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '1' }}
-      #   run: python court_records.py
-      #   continue-on-error: true
 
       # continue-on-error on every scrape step: quality_check.py (not a step
       # crashing early) is meant to be the thing that decides pass/fail — a
@@ -65,6 +48,18 @@ jobs:
       - name: Scrape Chancery probate dockets
         working-directory: scraper
         run: python probate_dockets.py
+        continue-on-error: true
+
+      # Standing inventory of parcels whose county owner record is titled to
+      # HEIRS / an ESTATE / an EXECUTOR (~254). Upserts its own parcels from the
+      # county GIS, so it doesn't depend on enrich_assessor; runs after the
+      # probate docket step so its probate cross-reference sees today's dockets.
+      # ~9 requests, ~45 s; prints counts only.
+      - name: Scrape estate-owned parcels (county GIS owner records)
+        working-directory: scraper
+        env:
+          ESTATE_MAX_PAGES: "40"
+        run: python estate_parcels.py
         continue-on-error: true
 
       # Six third-party posting sites, each mirroring a different law firm's
@@ -96,6 +91,20 @@ jobs:
           ENRICH_MAX_POINTS: "5000"
           ENRICH_MAX_OWNER_LOOKUPS: "500"
         run: python enrich_assessor.py
+        continue-on-error: true
+
+      # City of Chattanooga tax portal (OpenGov): per-parcel municipal-lien
+      # lookups for parcels ALREADY flagged by another source — enrichment
+      # only, never a crawl. Reads parcels.tax_map_no, so it must run after
+      # enrich_assessor. >=1.6 s between requests; caps keep it under ~10 min.
+      - name: Enrich municipal liens (City tax portal)
+        working-directory: scraper
+        timeout-minutes: 15
+        env:
+          LIENS_MAX_PARCELS: "100"
+          LIENS_MAX_SECONDS: "540"
+          LIENS_MAX_YEARS_PER_PARCEL: "8"
+        run: python municipal_liens.py
         continue-on-error: true
 
       - name: Quality check (fails the build before anything commits)
