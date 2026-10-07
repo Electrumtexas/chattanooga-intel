@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-10-07T00:34:14Z",
+  "generated_at": "2026-10-07T16:18:53Z",
   "score_model": "v2-families-2026-10-06",
   "scoring_as_of": "2026-10-07",
   "tier_min_raw": 15.0,
   "unified_lead_count": 16739,
   "tier_counts": {
-    "triple_threat": 7,
-    "multi_factor": 237,
+    "triple_threat": 8,
+    "multi_factor": 236,
     "single_signal": 16495
   },
   "family_counts": {
@@ -15,7 +15,7 @@
     "code_violation": 1465,
     "tax_delinquency": 5632,
     "tax_sale": 66,
-    "lien": 8
+    "lien": 12
   },
   "owner_type_counts": {
     "individual": 13005,
@@ -43,8 +43,8 @@
   "score_ge_99": 0,
   "sources": {
     "court_records": {
-      "total_records": 1450,
-      "resolved_by_native_parcel_id": 454,
+      "total_records": 1454,
+      "resolved_by_native_parcel_id": 458,
       "resolved_by_address": 29,
       "resolved_by_point_in_parcel": 0,
       "resolved_by_owner_name_fallback": 7,
