@@ -1,20 +1,56 @@
 {
-  "generated_at": "2026-10-06T15:44:17Z",
-  "unified_lead_count": 16547,
+  "generated_at": "2026-10-07T00:34:14Z",
+  "score_model": "v2-families-2026-10-06",
+  "scoring_as_of": "2026-10-07",
+  "tier_min_raw": 15.0,
+  "unified_lead_count": 16739,
   "tier_counts": {
-    "triple_threat": 16,
-    "multi_factor": 1062,
-    "single_signal": 15469
+    "triple_threat": 7,
+    "multi_factor": 237,
+    "single_signal": 16495
   },
+  "family_counts": {
+    "foreclosure": 28,
+    "estate": 259,
+    "code_violation": 1465,
+    "tax_delinquency": 5632,
+    "tax_sale": 66,
+    "lien": 8
+  },
+  "owner_type_counts": {
+    "individual": 13005,
+    "llc": 2815,
+    "corp": 495,
+    "trust": 101,
+    "institutional": 200,
+    "government": 106,
+    "lender": 7,
+    "unknown": 9,
+    "none": 1
+  },
+  "non_acquirable_leads": 602,
+  "score_deciles": [
+    4.1,
+    5.6,
+    7.6,
+    9.6,
+    13.3,
+    17.3,
+    21.7,
+    26.9,
+    36.4
+  ],
+  "score_ge_99": 0,
   "sources": {
     "court_records": {
-      "total_records": 1166,
-      "resolved_by_native_parcel_id": 192,
+      "total_records": 1450,
+      "resolved_by_native_parcel_id": 454,
       "resolved_by_address": 29,
       "resolved_by_point_in_parcel": 0,
-      "resolved_by_owner_name_fallback": 3,
-      "unresolved": 942,
-      "fallback_rate": 0.003
+      "resolved_by_owner_name_fallback": 7,
+      "unresolved": 960,
+      "fallback_rate": 0.005,
+      "not_in_latest_pull": 0
     },
     "tax_delinquent": {
       "total_records": 12333,
@@ -23,7 +59,9 @@
       "resolved_by_point_in_parcel": 0,
       "resolved_by_owner_name_fallback": 0,
       "unresolved": 0,
-      "fallback_rate": 0.0
+      "fallback_rate": 0.0,
+      "not_in_latest_pull": 515,
+      "stale_rule_skipped": false
     },
     "code_enforcement": {
       "total_records": 29082,
@@ -32,7 +70,9 @@
       "resolved_by_point_in_parcel": 6861,
       "resolved_by_owner_name_fallback": 0,
       "unresolved": 7563,
-      "fallback_rate": 0.0
+      "fallback_rate": 0.0,
+      "not_in_latest_pull": 312,
+      "stale_rule_skipped": false
     }
   }
 }
