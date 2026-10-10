@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-10-09T16:02:22Z",
+  "generated_at": "2026-10-10T15:15:33Z",
   "score_model": "v2-families-2026-10-06",
-  "scoring_as_of": "2026-10-09",
+  "scoring_as_of": "2026-10-10",
   "tier_min_raw": 15.0,
   "unified_lead_count": 16740,
   "tier_counts": {
-    "triple_threat": 14,
-    "multi_factor": 234,
-    "single_signal": 16492
+    "triple_threat": 19,
+    "multi_factor": 236,
+    "single_signal": 16485
   },
   "family_counts": {
     "foreclosure": 28,
     "estate": 260,
-    "code_violation": 1450,
+    "code_violation": 1449,
     "tax_delinquency": 5632,
     "tax_sale": 66,
-    "lien": 23
+    "lien": 37
   },
   "owner_type_counts": {
     "individual": 13006,
@@ -37,14 +37,14 @@
     13.3,
     17.3,
     21.7,
-    26.9,
+    27.0,
     36.4
   ],
   "score_ge_99": 0,
   "sources": {
     "court_records": {
-      "total_records": 1471,
-      "resolved_by_native_parcel_id": 469,
+      "total_records": 1485,
+      "resolved_by_native_parcel_id": 483,
       "resolved_by_address": 30,
       "resolved_by_point_in_parcel": 0,
       "resolved_by_owner_name_fallback": 8,
