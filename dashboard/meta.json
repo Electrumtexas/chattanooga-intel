@@ -1,34 +1,34 @@
 {
-  "generated_at": "2026-10-11T15:32:27Z",
+  "generated_at": "2026-10-12T18:51:31Z",
   "score_model": "v2-families-2026-10-06",
-  "scoring_as_of": "2026-10-11",
+  "scoring_as_of": "2026-10-12",
   "tier_min_raw": 15.0,
-  "unified_lead_count": 16740,
+  "unified_lead_count": 16778,
   "tier_counts": {
-    "triple_threat": 23,
-    "multi_factor": 233,
-    "single_signal": 16484
+    "triple_threat": 25,
+    "multi_factor": 244,
+    "single_signal": 16509
   },
   "family_counts": {
-    "code_violation": 1447,
-    "lien": 44,
+    "code_violation": 1479,
+    "lien": 51,
     "tax_delinquency": 5632,
     "foreclosure": 28,
     "estate": 260,
     "tax_sale": 66
   },
   "owner_type_counts": {
-    "individual": 13006,
-    "llc": 2815,
+    "individual": 13041,
+    "llc": 2817,
     "corp": 495,
     "trust": 101,
-    "institutional": 200,
+    "institutional": 201,
     "government": 106,
     "lender": 7,
     "unknown": 9,
     "none": 1
   },
-  "non_acquirable_leads": 602,
+  "non_acquirable_leads": 603,
   "score_deciles": [
     4.1,
     5.6,
@@ -36,19 +36,19 @@
     9.6,
     13.3,
     17.3,
-    21.7,
+    21.8,
     27.0,
-    36.4
+    36.5
   ],
   "score_ge_99": 0,
   "sources": {
     "court_records": {
-      "total_records": 1492,
-      "resolved_by_native_parcel_id": 490,
+      "total_records": 1500,
+      "resolved_by_native_parcel_id": 497,
       "resolved_by_address": 30,
       "resolved_by_point_in_parcel": 0,
       "resolved_by_owner_name_fallback": 8,
-      "unresolved": 964,
+      "unresolved": 965,
       "fallback_rate": 0.005,
       "not_in_latest_pull": 0
     },
@@ -64,14 +64,14 @@
       "stale_rule_skipped": false
     },
     "code_enforcement": {
-      "total_records": 29082,
+      "total_records": 29324,
       "resolved_by_native_parcel_id": 0,
-      "resolved_by_address": 14658,
+      "resolved_by_address": 14849,
       "resolved_by_point_in_parcel": 6861,
       "resolved_by_owner_name_fallback": 0,
-      "unresolved": 7563,
+      "unresolved": 7614,
       "fallback_rate": 0.0,
-      "not_in_latest_pull": 312,
+      "not_in_latest_pull": 680,
       "stale_rule_skipped": false
     }
   }
