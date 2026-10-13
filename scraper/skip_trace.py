@@ -87,6 +87,7 @@ SKIPTRACE_MIN_REMAINING_CREDITS (100) never spend the account below this
 SKIPTRACE_EST_CREDITS_PER_PARCEL (4)  worst-case planning estimate (1 property + ~3 owner contacts)
 SKIPTRACE_MIN_SCORE (0)               score floor
 SKIPTRACE_REFRESH_DAYS (180)          re-trace interval
+SKIPTRACE_PERSON_ONLY (1)              1 = trace only owners named as people; 0 also allows LLCs/trusts/estates
 SKIPTRACE_AUDIENCE (owners)           contact_audience; owners_and_family costs more people credits
 SKIPTRACE_LOOKUP (apn_then_address)   or 'apn' / 'address'
 SKIPTRACE_MAX_CREDITS_PER_DAY (150)   rolling-24h cap, from skip_traces.credits_used in the store
@@ -280,10 +281,34 @@ def _classifier_knows_government() -> bool:
         return False
 
 
+# People only (default). DealMachine holds people, not companies: the first live
+# test (2026-10-13) traced the 3 top leads and got 0 contacts back. Owners named
+# as a company, trust/trustee, estate or heirs are skipped unless
+# SKIPTRACE_PERSON_ONLY=0. A deceased owner's heirs/estate parcel has no living
+# person to look up under that name (estate_parcels carries the C/O contact).
+_NOT_A_PERSON = re.compile(
+    r"\b(TR|TRS|TRUSTEE|TRUSTEES|TTEE|TRUST|REVOCABLE|IRREVOCABLE|LIVING TRUST|FAMILY TRUST|"
+    r"HEIRS?|ESTATE|EST OF|LIFE EST(ATE)?|DECEASED|DEC'?D|"
+    r"LLC|L L C|LLP|PLLC|LP|LTD|INC|INCORPORATED|CORP|CORPORATION|CO|COMPANY|"
+    r"PARTNERS|PARTNERSHIP|HOLDINGS?|INVESTMENTS?|INVESTORS|PROPERTIES|PROPERTY|ENTERPRISES?|REALTY|"
+    r"HOMES|HOUSING|GROUP|VENTURES?|CAPITAL|MANAGEMENT|MGMT|RENTALS?|DEVELOPMENT|DEVELOPERS|"
+    r"CONSTRUCTION|BUILDERS?|SERVICES|ASSOCIATES|FUND|FOUNDATION|ORGANIZATION|SOLUTIONS|"
+    r"APARTMENTS?|PROPERTY OWNERS?|C/O)\b"
+)
+
+
+def _person_only() -> bool:
+    return os.environ.get("SKIPTRACE_PERSON_ONLY", "1") != "0"
+
+
 def _owner_excluded(owner_name: str | None, stored_type: str | None, new_vocab: bool | None = None) -> bool:
     otype = parcel_utils.classify_owner_type(owner_name) or stored_type
     if otype in EXCLUDED_OWNER_TYPES:
         return True
+    if _person_only():
+        name_up = " ".join((owner_name or "").upper().replace("&", " & ").split())
+        if otype not in (None, "individual") or _NOT_A_PERSON.search(name_up):
+            return True
     if _LARGE_INSTITUTION.search(" ".join((owner_name or "").upper().split())):
         return True
     if new_vocab is None:
