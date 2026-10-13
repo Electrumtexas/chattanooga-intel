@@ -431,6 +431,17 @@ already flagged and never enumerates or crawls the portal. Mechanics verified li
   completion; S02/S03 substitute/successor trustee; U01/U02 UCC.
 
 ### Skip tracing — DealMachine API (`skip_trace.py`, `contacts_store.py`) — built, not yet run live
+**Live-verified 2026-10-13/14 (dev_skiptrace.yml):** key + plan work (~10k credits). APN lookup matches
+on the plain `parcel_id` format (10/10; the padded `.00` variant is never needed); `contacts` come back
+only for owners named as PEOPLE — the first test traced the 3 top leads, which were companies/trusts, and
+got 0 contacts. **People-only is now the default** (`SKIPTRACE_PERSON_ONLY=1`; set 0 to allow LLCs/trusts/
+estates/heirs): the eligible pool is ~11.4k parcels (~720 priority). Test of 10 individual-owner leads:
+10/10 matched (6 exact / 3 strong / 1 weak owner-name match), 37 contacts, 18 phones, 19 emails,
+**8 of 18 phones on the national DNC list**, 19 credits (~2/lead). The request must list people fields
+(`phones`, `emails`, `full_name`, ...) in `fields`; `dm_person_id`/`contact_type`/`is_resident` are
+rejected (400 field_not_found). DealMachine's property response also carries estimated value/equity,
+loan balance, owner-occupied, last sale, taxes — not yet used for scoring (idea: equity as a signal).
+
 
 Owner decision (2026-10-06): automatic DealMachine API skip tracing, results stored **encrypted**
 in this repo while it is still public ("for building purposes... we will button it up later").
