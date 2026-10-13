@@ -807,16 +807,12 @@ def calibrate_from_data(conn) -> None:
     _pct("court_records.amount", [r[0] for r in conn.execute("SELECT amount FROM court_records WHERE amount > 0")])
     _pct("tax_sale min bid", [r[0] for r in conn.execute(
         "SELECT amount FROM court_records WHERE case_type = 'tax_sale_filing' AND amount > 0")])
-    # Live rows = exactly the rows build_unified scores: its stale-row rule
-    # (latest full-ingest reference + partial-ingest guard), not MAX(last_seen_at),
-    # which one bumped row would skew. Imported lazily — build_unified imports
-    # this module at load time.
-    from build_unified import mark_unlisted
+    # Live rows = exactly the rows build_unified scores: those with no
+    # unlisted_at (set by db.reconcile_snapshot when the source drops a row).
     tax_rows = [
-        {"parcel_id": r[0], "tax_year": r[1], "amount_due": r[2], "last_seen_at": r[3]}
-        for r in conn.execute("SELECT parcel_id, tax_year, amount_due, last_seen_at FROM tax_delinquent")
+        {"parcel_id": r[0], "tax_year": r[1], "amount_due": r[2], "_unlisted": bool(r[3])}
+        for r in conn.execute("SELECT parcel_id, tax_year, amount_due, unlisted_at FROM tax_delinquent")
     ]
-    mark_unlisted({"tax_delinquent": tax_rows, "code_enforcement": []})
     values = dict(conn.execute("SELECT parcel_id, appraised_value FROM parcels").fetchall())
     agg: dict[str, list] = {}
     for r in tax_rows:

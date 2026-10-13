@@ -150,7 +150,10 @@ CREATE INDEX IF NOT EXISTS idx_scrape_log_source_run ON scrape_log(source, run_a
 ADDED_COLUMNS = {
     "parcels": {"tax_map_no": "TEXT", "land_use": "TEXT", "appraised_value": "REAL"},
     "court_records": {"description": "TEXT"},
-    "code_enforcement": {"record_id": "TEXT", "violation_code": "TEXT", "latitude": "REAL", "longitude": "REAL"},
+    # Set (to a date) when a full-snapshot source stops listing a row; cleared if it reappears.
+    # See reconcile_snapshot().
+    "tax_delinquent": {"unlisted_at": "TEXT"},
+    "code_enforcement": {"record_id": "TEXT", "violation_code": "TEXT", "latitude": "REAL", "longitude": "REAL", "unlisted_at": "TEXT"},
 }
 
 
@@ -215,6 +218,13 @@ def upsert_parcel(conn: sqlite3.Connection, parcel_id: str, **fields) -> None:
         merged = {k: v for k, v in fields.items() if v is not None}
         if not merged:
             return
+        # Skip a write that wouldn't change anything. updated_at used to be
+        # bumped on every daily re-scrape of ~8,000 parcels, rewriting pages
+        # all through the committed database file for no new information.
+        cols = ",".join(merged)
+        cur = conn.execute(f"SELECT {cols} FROM parcels WHERE parcel_id = ?", (parcel_id,)).fetchone()
+        if cur is not None and all(cur[i] == v for i, v in enumerate(merged.values())):
+            return
         merged["updated_at"] = now
         set_clause = ",".join(f"{k} = ?" for k in merged)
         conn.execute(
@@ -229,6 +239,7 @@ def upsert_record(
     dedupe_key: str,
     keep_existing: tuple[str, ...] = (),
     touch_last_seen: bool = True,
+    skip_if_unchanged: bool = False,
     **fields,
 ) -> None:
     """Shared upsert for the source tables, keyed on dedupe_key.
@@ -246,14 +257,36 @@ def upsert_record(
     sighting, so those callers pass False. (Found 2026-10-06: backfills had
     bumped 156 code_enforcement rows on days the city CSV was unchanged.)
 
+    `skip_if_unchanged=True` makes an existing row whose values would not
+    change a complete no-op, last_seen_at included. Used by the two full-
+    snapshot sources (tax_delinquent, code_enforcement): they re-read every
+    row every day, and rewriting last_seen_at on ~40,000 rows made the
+    committed database change on every page, so git stored a near-full copy
+    daily. For those tables "is this row still listed" is tracked by
+    reconcile_snapshot() (rows get unlisted_at when they drop out), not by
+    last_seen_at.
+
     `table` is always a hardcoded literal from a caller in this codebase
     (never user/request input), so building the statement with an f-string
     is safe here — there is no injection surface.
     """
     now = now_iso()
     existing = conn.execute(
-        f"SELECT id FROM {table} WHERE dedupe_key = ?", (dedupe_key,)
+        f"SELECT * FROM {table} WHERE dedupe_key = ?", (dedupe_key,)
     ).fetchone()
+    if existing is not None and skip_if_unchanged:
+        changed = False
+        for k, v in fields.items():
+            cur = existing[k]
+            if k in keep_existing:
+                if cur is None and v is not None:
+                    changed = True
+                    break
+            elif cur != v:
+                changed = True
+                break
+        if not changed:
+            return
     if existing is None:
         columns = ["dedupe_key", "first_seen_at", "last_seen_at"] + list(fields.keys())
         values = [dedupe_key, now, now] + list(fields.values())
@@ -276,6 +309,52 @@ def upsert_record(
                 f"UPDATE {table} SET {set_clause} WHERE dedupe_key = ?",
                 [*fields.values(), dedupe_key],
             )
+
+
+def reconcile_snapshot(
+    conn: sqlite3.Connection,
+    table: str,
+    seen_keys,
+    max_drop_share: float = 0.25,
+    today: str | None = None,
+) -> dict:
+    """After a full-snapshot ingest, record which rows the source no longer
+    lists. Rows not in `seen_keys` get unlisted_at = today (build_unified
+    stops scoring them); rows that reappear get it cleared.
+
+    Guard: if more than `max_drop_share` of the currently-listed rows would
+    drop in one ingest, assume a truncated/partial pull, flag nothing and
+    report skipped=True (reappearing rows are still cleared). Replaces the
+    last_seen_at-based rule that build_unified.mark_unlisted used to apply.
+    Never deletes rows.
+    """
+    today = today or now_iso()[:10]
+    seen = set(seen_keys)
+    out = {"dropped": 0, "reappeared": 0, "skipped": False, "listed_before": 0}
+    if not seen:
+        out["skipped"] = True
+        return out
+    conn.execute("CREATE TEMP TABLE IF NOT EXISTS _seen (k TEXT PRIMARY KEY)")
+    conn.execute("DELETE FROM _seen")
+    conn.executemany("INSERT OR IGNORE INTO _seen (k) VALUES (?)", ((k,) for k in seen))
+    out["reappeared"] = conn.execute(
+        f"UPDATE {table} SET unlisted_at = NULL WHERE unlisted_at IS NOT NULL AND dedupe_key IN (SELECT k FROM _seen)"
+    ).rowcount
+    listed = conn.execute(f"SELECT COUNT(*) FROM {table} WHERE unlisted_at IS NULL").fetchone()[0]
+    out["listed_before"] = listed
+    would_drop = conn.execute(
+        f"SELECT COUNT(*) FROM {table} WHERE unlisted_at IS NULL AND dedupe_key NOT IN (SELECT k FROM _seen)"
+    ).fetchone()[0]
+    if listed and would_drop > max_drop_share * listed:
+        out["skipped"] = True
+        out["would_drop"] = would_drop
+    else:
+        out["dropped"] = conn.execute(
+            f"UPDATE {table} SET unlisted_at = ? WHERE unlisted_at IS NULL AND dedupe_key NOT IN (SELECT k FROM _seen)",
+            (today,),
+        ).rowcount
+    conn.execute("DROP TABLE _seen")
+    return out
 
 
 def log_scrape(

@@ -64,26 +64,14 @@ Live vs audit-only records. Never scored, never counted toward exposure or
 tier, but still shown in `signals` / the per-source files and in `sources`:
   - court_records rows of a _cancelled/_resolved case type
     (scoring.NON_DISTRESS_CASE_TYPES);
-  - tax_delinquent / code_enforcement rows the latest pull no longer
-    contains. Both scrapers re-upsert every row of a full file on each
-    ingest (tax_delinquent daily; code_enforcement whenever the city's CSV
-    changes), so a row whose last_seen date is more than
-    SNAPSHOT_STALE_TOLERANCE_DAYS before the table's latest FULL-ingest date
-    has left the source: a paid bill, or a closed case that aged out of the
-    730-day window. The reference is the newest date carried by >= 10% of the
-    table's rows (latest_ingest_date), NOT MAX(last_seen_at): parcel_id
-    backfills used to bump single rows' last_seen_at, and with MAX one bumped
-    row unscored the whole code table (release review, 2026-10-06). Backfills
-    now pass upsert_record(touch_last_seen=False). Guard: when the rows that
-    dropped out AT THE LATEST INGEST exceed 25% of (live + that batch) — a
-    partial ingest — that batch stays scored and meta.json says
-    stale_rule_skipped; rows dropped at earlier ingests stay unlisted, so the
-    ever-growing history of paid bills / aged-out cases never trips it (see
-    mark_unlisted). Measured on the 2026-10-06 snapshot:
-    515 tax rows (446 parcels, 378 of them fully paid) and 312 code rows
-    (311 closed 2024 rows + 1 open 2024 case; none in the 2026-10-02 city
-    CSV). Relative to each table's own ingest,
-    so a source outage marks nothing stale.
+  - tax_delinquent / code_enforcement rows the latest full pull no longer
+    contains: a paid bill, or a closed case that aged out of the 730-day
+    window. The scrapers mark them (db.reconcile_snapshot sets unlisted_at
+    when a row drops out of an ingest and clears it if the row comes back;
+    its guard refuses to flag more than 25% of listed rows in one ingest, so a
+    truncated download can't unscore the table). First measured on the
+    2026-10-06 snapshot: 515 tax rows and 312 code rows. Relative to each
+    table's own ingest, so a source outage marks nothing.
 
 dashboard/meta.json carries generation timestamp, per-source record counts
 (plus `not_in_latest_pull`), address-resolution fallback rates, tier counts
@@ -100,7 +88,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 from db import get_connection, now_iso
@@ -144,24 +132,6 @@ SOURCE_TABLES = ["court_records", "tax_delinquent", "code_enforcement"]
 
 # Full-snapshot tables (see the module docstring, "Live vs audit-only").
 SNAPSHOT_TABLES = ("tax_delinquent", "code_enforcement")
-# Rows whose last_seen date is more than this many days before the table's
-# latest full-ingest date are unlisted. 1 (not 0) only so an ingest that
-# straddles midnight UTC can't split itself; the daily cron runs at 09:00 UTC.
-SNAPSHOT_STALE_TOLERANCE_DAYS = 1
-# A date counts as a full ingest when at least this share of the table's rows
-# carry it (a real ingest touches ~95-100%; a backfill bump touched 0.4%).
-SNAPSHOT_INGEST_MIN_SHARE = 0.10
-# Partial-ingest guard: if the rows that dropped out AT THE LATEST INGEST are
-# more than this share of (live + that batch), the batch stays scored. Older
-# drops are never part of the test (see mark_unlisted).
-SNAPSHOT_MAX_UNLISTED_SHARE = 0.25
-# ...and only while that batch is recent: when the previous full ingest is more
-# than this many days before the latest one, a large drop is treated as a real
-# shrink of the source (e.g. a narrower date window), not a partial download,
-# so the guard can't hold it scored forever. Ingests run daily (tax) or every
-# few days (code: whenever the city's CSV changes), and a truncated file of the
-# kind the guard exists for also fails quality_check's 30% blocking floor.
-SNAPSHOT_GUARD_MAX_DAYS = 14
 
 
 def _row_to_dict(row) -> dict:
@@ -178,7 +148,7 @@ def _row_to_dict(row) -> dict:
 # client-side with no backend to paginate it.
 _SIGNAL_BOOKKEEPING_KEYS = {
     "id", "dedupe_key", "parcel_id", "raw_address", "raw_owner_name",
-    "first_seen_at", "last_seen_at", "resolution_method", "_unlisted",
+    "first_seen_at", "last_seen_at", "resolution_method", "_unlisted", "unlisted_at",
 }
 
 
@@ -230,82 +200,29 @@ def load_all_records(conn) -> dict[str, list[dict]]:
     return records
 
 
-def latest_ingest_date(seen: list[date | None]) -> date | None:
-    """The date of the table's latest FULL ingest: the newest last_seen date
-    that at least SNAPSHOT_INGEST_MIN_SHARE of the rows share.
-
-    Not MAX(last_seen_at): a handful of rows can carry a newer date than the
-    last full ingest without the source having been re-read (before
-    db.upsert_record grew touch_last_seen, enrich_assessor's parcel_id
-    backfills bumped last_seen_at; 156 code rows in the 2026-10-06 snapshot
-    carry such dates). Using MAX made ONE bumped row put every other code row
-    "behind the newest pull" — 29,081 of 29,082 rows went unscored in the
-    release review's reproduction. A full ingest touches ~all rows on one
-    date, so the newest date with a real share of the table is that ingest.
-    """
-    counts: dict[date, int] = {}
-    for d in seen:
-        if d:
-            counts[d] = counts.get(d, 0) + 1
-    total = sum(counts.values())
-    if not total:
-        return None
-    for d in sorted(counts, reverse=True):
-        if counts[d] >= SNAPSHOT_INGEST_MIN_SHARE * total:
-            return d
-    return max(counts)  # no date dominates (shouldn't happen): fall back to newest
-
-
 def mark_unlisted(records: dict[str, list[dict]]) -> tuple[dict[str, int], dict[str, bool]]:
-    """Flags (r['_unlisted'] = True) snapshot-table rows the latest full pull
-    no longer contains. Returns (per-table flagged counts, per-table
-    "rule skipped" flags) for meta.json.
+    """Flags (r['_unlisted'] = True) snapshot-table rows the source no longer
+    lists, i.e. rows carrying unlisted_at. Returns (per-table flagged counts,
+    per-table "rule skipped" flags) for meta.json.
 
-    A row is unlisted when its last_seen date is more than
-    SNAPSHOT_STALE_TOLERANCE_DAYS before the table's latest full-ingest date
-    (latest_ingest_date).
-
-    Partial-ingest guard, judged on the LATEST drop only: the batch of rows
-    last seen on/near the previous full ingest (latest_ingest_date over the
-    stale rows' dates) is the set that dropped out at the latest ingest. If
-    that batch is more than SNAPSHOT_MAX_UNLISTED_SHARE of (live rows + the
-    batch), and the previous ingest is within SNAPSHOT_GUARD_MAX_DAYS of the
-    latest one, the batch stays scored (stale_rule_skipped=True); rows that
-    dropped out at earlier ingests stay unlisted. Accumulated history never
-    enters the test — both tables keep every row forever, so a
-    share-of-whole-table test would switch the rule off permanently after
-    months of normal churn. The day limit stops a genuine source shrink from
-    being held scored forever.
+    unlisted_at is written at ingest time by db.reconcile_snapshot() (the
+    scrapers know exactly which rows they just saw, and its partial-pull
+    guard lives there). This replaced a rule that inferred drops from
+    last_seen_at dates, which required every row's last_seen_at to be
+    rewritten daily — that churned the whole committed database file and made
+    git history grow ~15 MB a day. last_seen_at is no longer maintained for
+    these two tables.
     """
-    tol = timedelta(days=SNAPSHOT_STALE_TOLERANCE_DAYS)
     counts: dict[str, int] = {}
     skipped: dict[str, bool] = {}
     for table in SNAPSHOT_TABLES:
-        rows = records.get(table) or []
-        seen = [parse_date(r.get("last_seen_at")) for r in rows]
-        ref = latest_ingest_date(seen)
-        stale = [i for i, d in enumerate(seen) if ref and d and d < ref - tol]
-        live = len(rows) - len(stale)
-        # The guard judges only the rows that dropped out at the latest ingest
-        # (last seen on/near the previous full ingest), never the accumulated
-        # history: neither table deletes rows, so earlier drops pile up and a
-        # share-of-whole-table test would trip permanently after months of
-        # normal churn (release review round 2: 8 monthly batches of ~500 paid
-        # bills reach 25% of tax_delinquent).
-        prev_ref = latest_ingest_date([seen[i] for i in stale])
-        newly: set[int] = set()
-        if prev_ref and (ref - prev_ref).days <= SNAPSHOT_GUARD_MAX_DAYS:
-            newly = {i for i in stale if seen[i] >= prev_ref - tol}
-        if newly and len(newly) > SNAPSHOT_MAX_UNLISTED_SHARE * (live + len(newly)):
-            # Suspected partial ingest: keep this batch scored; rows that were
-            # already unlisted before it stay unlisted.
-            skipped[table] = True
-            stale = [i for i in stale if i not in newly]
-        else:
-            skipped[table] = False
-        for i in stale:
-            rows[i]["_unlisted"] = True
-        counts[table] = len(stale)
+        n = 0
+        for r in records.get(table) or []:
+            if r.get("unlisted_at"):
+                r["_unlisted"] = True
+                n += 1
+        counts[table] = n
+        skipped[table] = False
     return counts, skipped
 
 

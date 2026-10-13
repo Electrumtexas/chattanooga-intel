@@ -80,7 +80,7 @@ from pathlib import Path
 
 import requests
 
-from db import get_connection, log_scrape, upsert_parcel, upsert_record
+from db import get_connection, log_scrape, reconcile_snapshot, upsert_parcel, upsert_record
 from parcel_utils import (
     classify_owner_type,
     format_parcel_id,
@@ -200,6 +200,7 @@ def upsert(conn, records: list[dict]) -> int:
             raw_owner_name=r["raw_owner_name"],
             resolution_method="native_parcel_id",  # source gives Map/Group/Parcel directly — stronger confidence than a geocoded address match
             source_url=SOURCE_URL,
+            skip_if_unchanged=True,
         )
     return len(records)
 
@@ -209,6 +210,8 @@ def main() -> None:
     csv_text = fetch()
     records, stats = parse(csv_text)
     count = upsert(conn, records)
+    snap = reconcile_snapshot(conn, "tax_delinquent", [f"trustee:{r['parcel_id']}:{r['tax_year']}" for r in records])
+    stats = {**stats, "unlisted_now": snap["dropped"], "reappeared": snap["reappeared"], "drop_guard_tripped": snap["skipped"]}
     conn.commit()
     log_scrape(conn, "tax_delinquent", record_count=count, status="ok", notes=str(stats))
     conn.commit()

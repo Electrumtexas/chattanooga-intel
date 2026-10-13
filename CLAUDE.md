@@ -115,9 +115,9 @@ Verified against a real pull:
   stormwater owed; muni tax appears only for the small-town districts. Six parcels checked in both
   sources show city tax on the city portal and county-only amounts here. So city tax arrears are
   not double counted anywhere — they are simply missing from the project (see Pending work).
-- Rows that drop out of a later monthly file (paid bills) are left in the table with an old
-  `last_seen_at`; `build_unified.py` does not score them (see Scoring — stale-row rule). Only a
-  real re-ingest may move `last_seen_at`; backfills pass `upsert_record(touch_last_seen=False)`.
+- Rows that drop out of a later monthly file (paid bills) are left in the table with
+  `unlisted_at` set (by `db.reconcile_snapshot`); `build_unified.py` does not score them (see
+  Scoring — stale-row rule).
 
 ### Tax-sale filings — Clerk & Master — LIVE (`scraper/tax_sale.py`)
 
@@ -556,7 +556,7 @@ Canonical join key: `parcel_id` = Map-Group-Parcel joined with `-`, blank Group 
 - **`court_records`**, **`tax_delinquent`**, **`code_enforcement`** — one row per case / per
   (parcel, tax_year) / per violation. Shared: nullable `parcel_id`, `raw_address`/`raw_owner_name`,
   a single `dedupe_key TEXT UNIQUE`, `resolution_method` (`native_parcel_id` | `address_match` |
-  `point_in_parcel` | `owner_name_fallback` | `unresolved`), `first_seen_at`/`last_seen_at`.
+  `point_in_parcel` | `owner_name_fallback` | `unresolved`), `first_seen_at`/`last_seen_at` (for `tax_delinquent` and `code_enforcement`, `last_seen_at` is no longer maintained on unchanged rows; they carry `unlisted_at` instead).
   `court_records` also carries `description`; `code_enforcement` also carries
   `record_id`/`violation_code`/`latitude`/`longitude`.
 - **`scrape_log`** — one row per scraper run per source; `quality_check.py` reads it.
@@ -643,32 +643,17 @@ merged; the module docstring records why each constant is what it is.
    scoring 23.5 showed as `triple_threat`).
 7. **Stale-row rule:** `tax_delinquent` / `code_enforcement` rows that the latest FULL ingest no
    longer contains are not scored, counted as exposure or used for tier (paid bills dropped from
-   the Trustee file; closed cases aged out of the city export). Reference date =
-   `build_unified.latest_ingest_date()`: the newest `last_seen_at` date carried by >= 10% of the
-   table's rows, **not** `MAX(last_seen_at)`. A row is unlisted when its date is more than 1 day
-   before that. **Partial-ingest guard, judged on the latest drop only:** the rows last seen
-   on/near the previous full ingest (`latest_ingest_date` over the stale rows' dates) are the
-   batch that dropped out at the latest ingest. If that batch is > 25% of (live rows + the batch)
-   and the previous ingest is within 14 days of the latest (`SNAPSHOT_GUARD_MAX_DAYS`), the batch
-   stays scored and meta.json shows `stale_rule_skipped: true`; rows that dropped out at earlier
-   ingests stay unlisted. Accumulated history is never part of the test: neither table deletes
-   rows, so the first version (> 25% of the *whole table*) would have switched the rule off for
-   good after ~8 monthly Trustee refreshes of ~500 paid bills (release review round 2, fixed
-   2026-10-06). The 14-day limit stops a genuine source shrink (e.g. a narrower city export
-   window) from being held scored forever; a truncated file also fails quality_check's 30%
-   blocking floor. Regression cases: 8 monthly batches of 500 → 4,000 unlisted, guard off; a
-   20%-touched code ingest → guard on, older history still unlisted. meta.json reports
-   `not_in_latest_pull` per source (2026-10-06 snapshot: 515 tax rows, 312 code rows).
-   `scoring.calibrate_from_data()` uses the same rule (it calls `mark_unlisted`).
-   *Why not MAX:* `last_seen_at` means "the source still lists this row", but `enrich_assessor`'s
-   parcel_id backfills went through `db.upsert_record`, which bumped `last_seen_at`. On a day the
-   city CSV was unchanged, one backfilled code row made every other code row look 3+ days stale:
-   the release review reproduced 29,081 of 29,082 code rows unscored and the code family vanishing
-   from the dashboard (base.db already had 156 bumped rows from 2026-09-29/30). Fixed two ways:
-   `db.upsert_record(..., touch_last_seen=False)` is now passed by every parcel_id backfill
-   (enrich_assessor address/point/owner-name matches, estate_parcels' probate fill), and the
-   reference date is the dominant ingest date, not the max. **Convention:** any future write that
-   is not "the source listed this row today" must pass `touch_last_seen=False`.
+   the Trustee file; closed cases aged out of the city export). **Mechanism (changed 2026-10-13):**
+   at the end of each ingest the scraper calls `db.reconcile_snapshot(conn, table, seen_keys)`:
+   rows not seen get `unlisted_at = today`; rows that reappear get it cleared; nothing is deleted.
+   `build_unified.mark_unlisted` simply flags rows with `unlisted_at`. **Partial-ingest guard** (in
+   `reconcile_snapshot`): if more than 25% of the currently-listed rows would drop in one ingest
+   (a truncated download), nothing is flagged and the scraper's scrape_log note shows
+   `drop_guard_tripped=True`; an empty pull flags nothing either. The old design inferred drops
+   from `last_seen_at` dates, which forced every row's `last_seen_at` to be rewritten on every
+   daily ingest — see "Keeping git history small" below. meta.json reports `not_in_latest_pull`
+   per source. First measured 2026-10-13: 515 tax rows, 680 code rows (identical to what the old
+   date-based rule flagged on the same data, checked row by row).
 8. **Ceiling 99.9**; deterministic for a given as-of date (`SCORING_AS_OF=YYYY-MM-DD` pins it —
    scores otherwise drift daily as decays run). Sort: score, total family evidence, sooner sale,
    newest event, id.
@@ -748,6 +733,22 @@ store) and `requirements.txt` (`cryptography`) edits belong to the skip-trace wo
 and the skip-trace workstream (`skip_trace.py`,
 `contacts_store.py`, `scripts/`, `dev_skiptrace.yml`, a secrets-using workflow that commits to
 master) were **not** reviewed in this release: stage paths explicitly, never `git add -A`.
+
+## Keeping git history small (2026-10-13)
+
+The daily run used to commit `data/chattanooga.db` plus four `dashboard/*.json` files (~110 MB of
+raw files) and rewrite nearly every row's `last_seen_at`/`updated_at`, so git stored an almost
+new copy each day: `.git` grew ~15–20 MB/day (83 MB → 197 MB in a week) even though the database
+itself stayed ~28 MB with no duplicate keys. Two fixes:
+1. **`dashboard/*.json` is no longer committed** (gitignored). The scrape job builds it with
+   `build_unified.py` and publishes it straight to Pages (`upload-pages-artifact`; the deploy job
+   only runs `deploy-pages`). To view locally, run `scraper/build_unified.py` first.
+2. **Unchanged rows are not rewritten**: `db.upsert_record(..., skip_if_unchanged=True)` (used by
+   `tax_delinquent` and `code_enforcement`) and `upsert_parcel` skip no-op writes. Measured on a
+   copy of the production DB, a steady-state day now changes ~2% of the file's 4 KB pages (it
+   was ~100%). Old history is still in `.git`; shrinking it needs a history rewrite (owner call).
+**Convention:** a re-scrape of unchanged data must not write. Don't add per-run timestamps to
+rows of the big tables.
 
 ## GitHub Actions
 

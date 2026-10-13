@@ -165,7 +165,7 @@ from pathlib import Path
 
 import requests
 
-from db import get_connection, get_state, log_scrape, set_state, upsert_record
+from db import get_connection, get_state, log_scrape, reconcile_snapshot, set_state, upsert_record
 from parcel_utils import normalize_address
 
 ITEM_ID = "19f35e4e09c041718905088a1fc7a6bb"
@@ -175,6 +175,11 @@ SOURCE_URL = f"https://www.arcgis.com/home/item.html?id={ITEM_ID}"
 
 STATE_KEY_MODIFIED = "code_enforcement:item_modified"
 STATE_KEY_SIZE = "code_enforcement:item_size"
+# Set once an ingest has run db.reconcile_snapshot(). Until it exists the
+# unchanged-source skip is bypassed so rows that already dropped out of the
+# city file get their unlisted_at (one-time migration from the old
+# last_seen_at-based stale-row rule, 2026-10-13).
+STATE_KEY_RECONCILED = "code_enforcement:snapshot_reconciled"
 
 CLOSED_STATUS_CODES = {"C"}
 SKIP_STATUS_CODES = {"DUP"}
@@ -406,7 +411,10 @@ def fetch(conn) -> tuple[Path | None, dict]:
 
     prev_modified = get_state(conn, STATE_KEY_MODIFIED)
     prev_size = get_state(conn, STATE_KEY_SIZE)
-    unchanged = prev_modified is not None and str(modified) == prev_modified and str(size) == prev_size
+    unchanged = (
+        prev_modified is not None and str(modified) == prev_modified and str(size) == prev_size
+        and get_state(conn, STATE_KEY_RECONCILED) is not None
+    )
 
     info = {"size": size, "modified": modified, "skipped": unchanged}
     if unchanged:
@@ -557,6 +565,7 @@ def upsert(conn, records: list[dict]) -> int:
             longitude=r["longitude"],
             resolution_method="unresolved",
             source_url=SOURCE_URL,
+            skip_if_unchanged=True,
         )
     return len(records)
 
@@ -579,8 +588,12 @@ def main() -> None:
     try:
         records, stats = parse(csv_path)
         count = upsert(conn, records)
+        snap = reconcile_snapshot(conn, "code_enforcement", [f"chattanooga_code:{r['record_id']}" for r in records])
+        stats = {**stats, "unlisted_now": snap["dropped"], "reappeared": snap["reappeared"], "drop_guard_tripped": snap["skipped"]}
         set_state(conn, STATE_KEY_MODIFIED, str(fetch_info["modified"]))
         set_state(conn, STATE_KEY_SIZE, str(fetch_info["size"]))
+        if not snap["skipped"]:
+            set_state(conn, STATE_KEY_RECONCILED, "1")
         conn.commit()
         log_scrape(conn, "code_enforcement", record_count=count, status="ok", notes=str(stats))
         conn.commit()
