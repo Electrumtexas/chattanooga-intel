@@ -144,8 +144,9 @@ MIN_REQUEST_INTERVAL = 1.1  # 60 req/min ceiling
 # list holding only property fields leaves the contacts out of the response even
 # when contact_audience asks for them. First live test (2026-10-13): 3/3
 # properties matched, 0 phones/emails came back. People fields added below.
-PEOPLE_FIELDS = ["dm_person_id", "full_name", "first_name", "last_name", "phones", "emails",
-                 "contact_type", "is_resident"]
+# dm_person_id / contact_type / is_resident come back on contacts automatically;
+# requesting them in `fields` is rejected (HTTP 400 field_not_found, 2026-10-13).
+PEOPLE_FIELDS = ["full_name", "first_name", "last_name", "phones", "emails"]
 PROPERTY_FIELDS = ["owner_1_full_name", "owner_2_full_name", "parcel_number_raw", "coordinates"] + PEOPLE_FIELDS
 DAILY_WINDOW_HOURS = 24
 _SAFE_CODE = re.compile(r"[a-z_]{1,40}")
