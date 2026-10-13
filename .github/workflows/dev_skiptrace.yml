@@ -25,6 +25,10 @@ name: Dev skip trace (manual)
         description: "Credit budget for this run"
         required: false
         default: "20"
+      max_credits_per_day:
+        description: "Rolling-24h credit cap (default 150; raise only for a deliberate large batch)"
+        required: false
+        default: "150"
       refresh_days:
         description: "Re-trace parcels already traced within this many days (default 180; use 0 to retry the same top leads after a fix — re-pulling a property in the same billing month is free)"
         required: false
@@ -71,8 +75,7 @@ jobs:
           SKIPTRACE_MAX_CREDITS_PER_RUN: ${{ github.event.inputs.max_credits || '20' }}
           SKIPTRACE_DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
           SKIPTRACE_MIN_REMAINING_CREDITS: "100"
-          SKIPTRACE_DEBUG_SHAPE: "1"  # structure-only response logging (no values) while verifying the contact fields
-          SKIPTRACE_MAX_CREDITS_PER_DAY: "150"
+          SKIPTRACE_MAX_CREDITS_PER_DAY: ${{ github.event.inputs.max_credits_per_day || '150' }}
           SKIPTRACE_BATCH_SIZE: "5"
           SKIPTRACE_REFRESH_DAYS: ${{ github.event.inputs.refresh_days || '180' }}
         run: python skip_trace.py

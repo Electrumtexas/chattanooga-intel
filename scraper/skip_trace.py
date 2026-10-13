@@ -558,6 +558,8 @@ class RunStats:
     dnc_phones: int = 0
     owner_match: dict = field(default_factory=dict)
     credits_used: float = 0.0
+    credits_properties: float = 0.0  # as reported by DealMachine's `credits` object (integers, no PII)
+    credits_people: float = 0.0
     credits_remaining_before: float | None = None
     credits_remaining_after: float | None = None
     stop_reason: str = "done"
@@ -574,7 +576,7 @@ class RunStats:
             f"address={self.address_matched}/{self.address_submitted} loc_mismatch={self.location_mismatch} "
             f"no_match={self.no_match} missing={self.missing} contacts_new={self.contacts_new} contacts_refreshed={self.contacts_refreshed} "
             f"phones={self.phones} emails={self.emails} dnc_phones={self.dnc_phones} owner_match[{om}] "
-            f"requests={self.requests} credits_used={self.credits_used:g} "
+            f"requests={self.requests} credits_used={self.credits_used:g} (properties={self.credits_properties:g} people={self.credits_people:g}) "
             f"credits_remaining={rb}->{ra} stop={self.stop_reason}"
         )
 
@@ -894,6 +896,9 @@ class Tracer:
         else:  # undocumented shape: assume worst case
             used = float(sum(1 + len(it.get("contacts") or []) for it in matched_items))
         self.stats.credits_used += used
+        for key, attr in (("properties", "credits_properties"), ("people", "credits_people")):
+            if isinstance(credits.get(key), (int, float)):
+                setattr(self.stats, attr, getattr(self.stats, attr) + float(credits[key]))
         return used, bool(body.get("warning") or body.get("warnings"))
 
     def _shares(self, used: float, matched_items: list[dict]) -> dict[int, float]:
