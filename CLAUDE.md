@@ -430,6 +430,42 @@ already flagged and never enumerates or crawls the portal. Mechanics verified li
   C05 child support lien; D04 decree lien; O03 order lien; D16 vendor's lien deed; N02 notice of
   completion; S02/S03 substitute/successor trustee; U01/U02 UCC.
 
+### Skip tracing — DealMachine API (`skip_trace.py`, `contacts_store.py`) — built, not yet run live
+
+Owner decision (2026-10-06): automatic DealMachine API skip tracing, results stored **encrypted**
+in this repo while it is still public ("for building purposes... we will button it up later").
+Contacts live only in `data/contacts.db.enc` (Fernet over the whole SQLite file; key = secret
+`CONTACTS_KEY`, local copy `%USERPROFILE%/chattanooga_contacts.key`). The plaintext
+`data/contacts.db` is a gitignored temp file deleted every run (a workflow guard step fails the job
+if it ever survives). Logs print counts, credits and error class names only.
+- API: `https://api.v2.dealmachine.com`, Bearer `DEALMACHINE_API_KEY` (secret).
+  `POST /v1/enrichment/{apn,address,name}` (≤250 items), `GET /v1/usage` for remaining credits.
+  Cost: 1 credit per matched property + 1 per returned contact; unmatched lookups free; re-pulls
+  within a billing month free. Plans (public `/v1/plans`): Basic $99/mo 10k credits, Pro $149 20k.
+- Lookup: APN scoped to Hamilton County (FIPS 47065), padded `NNN.00` variant also tried, then
+  address fallback. Every match must be within 200 m of our parcel (or house numbers match) before
+  any contact is kept — it fails closed (nothing to compare = 'location_mismatch'); owner-name agreement stored as `match_quality`.
+- Selection: top leads only (multi-signal or foreclosure / tax sale / estate / municipal lien /
+  probate), private owners only (placeholder/'unknown' owners and TITLE/FUNDING/REIT/MORTGAGE/BANK
+  names excluded), not re-traced within 180 days. Caps via `SKIPTRACE_*` env vars (batches of 5,
+  /v1/usage re-read before each batch, `SKIPTRACE_MAX_CREDITS_PER_DAY` 150 rolling-24h cap from the
+  store); stops on 401/402/403/429 or a low-credit floor. A paid POST is never blindly retried
+  (timeout = stop), and a response carrying data is always stored before a rate-limit stop.
+  `parcels.skip_traced_at/skip_trace_status` are written to the public DB only with
+  `SKIPTRACE_MARK_PARCELS=1` (default off).
+- DealMachine returns national DNC per phone but **no litigator flag** (stored as UNKNOWN): scrub
+  against a TCPA litigator list before dialing. DealMachine's terms put TCPA compliance on the
+  customer and bar redistributing their data — another reason contacts never go public.
+- Export: `python scripts/export_contacts.py` → CSV in Downloads (refuses paths inside the repo).
+- Test: `dev_skiptrace.yml` (manual; inputs `max`, `max_credits`, `dry_run`). Daily step in
+  `scrape.yml` is gated on repo variable `SKIPTRACE_ENABLED` and runs after the daily commit and the
+  Pages artifact upload (its commit step is `continue-on-error`). Both workflows share concurrency
+  group `skiptrace-store`: the encrypted blob can't be merged by git, so two writers must not overlap.
+- Open: confirm which APN form DealMachine matches (the log's `base=`/`pad00=` counts) on the first
+  dev run. GitHub Pages stays **public** even if the repo goes private (outside Enterprise), so
+  showing contacts on the dashboard later needs a passphrase-encrypted view, not just a private
+  repo. Every committed version of the encrypted file stays in git history — guard `CONTACTS_KEY`.
+
 ### Sources rejected — don't retry without an owner decision
 
 | Source | Why |
@@ -699,7 +735,7 @@ chattanooga-intel/
 │   ├── scrape.yml        # daily: scrapers (continue-on-error) → quality_check → build → commit → deploy
 │   ├── probe.yml         # manual: one request per candidate source from GitHub's runners
 │   ├── dev_samples.yml   # manual: General Sessions sample PDFs for parser development
-│   └── dev_skiptrace.yml # manual, in progress: small-batch skip trace (not part of the daily run)
+│   └── dev_skiptrace.yml # manual: small-batch DealMachine skip trace test (encrypted store)
 ├── dashboard/            # index.html + generated JSON (never hand-edit the JSON)
 ├── data/
 │   ├── chattanooga.db    # canonical SQLite store, committed
@@ -716,7 +752,7 @@ chattanooga-intel/
 │   ├── enrich_assessor.py      # LIVE — county GIS parcel/address/point/owner resolution
 │   ├── municipal_liens.py      # LIVE — City tax portal municipal-lien enrichment (after enrich_assessor)
 │   ├── internetpostings_site.py  # LIVE — site 7 for foreclosure_notices (owner-authorized terms acceptance)
-│   ├── skip_trace.py, contacts_store.py  # in progress — DealMachine skip trace into an encrypted
+│   ├── skip_trace.py, contacts_store.py  # built — DealMachine skip trace into an encrypted
 │   │                                     # contact store (data/contacts.db.enc); manual workflow only
 │   └── requirements.txt
 ├── scripts/              # owner-side helpers (export_contacts.py)

@@ -27,3 +27,10 @@ data/raw/**
 # it is NOT committed (it made git history grow ~15 MB/day). To view the
 # dashboard locally run build_unified.py first (it writes dashboard/*.json).
 dashboard/*.json
+
+# Skip-trace contact store: only the Fernet-encrypted data/contacts.db.enc is
+# committed. The plaintext SQLite is a temp file that contacts_store.py deletes
+# at the end of every run (also its journal/temp siblings) — never commit it.
+data/contacts.db
+data/contacts.db-*
+data/contacts.db.enc.tmp

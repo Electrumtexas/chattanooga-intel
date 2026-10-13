@@ -4,6 +4,7 @@ lxml>=5.0
 pandas>=2.2
 python-dateutil>=2.9
 pypdf>=4.2
+cryptography>=42.0  # Fernet encryption of data/contacts.db.enc (skip_trace.py / contacts_store.py)
 
 # playwright is NOT included yet — Phase 1 portal reconnaissance will confirm
 # whether any source actually requires JS rendering vs. plain requests+bs4.

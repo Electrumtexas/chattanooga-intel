@@ -127,6 +127,11 @@ SOURCES: dict[str, SourceCheck] = {
              "this run and tracks the due-queue and the run's time budget, not the portal. It exits non-zero and logs "
              "status='error' on its own if the portal health check or its search-sanity guard fails.",
     ),
+    "skip_trace": SourceCheck(
+        blocking=False,
+        allow_zero=True,
+        note="Credit-capped DealMachine skip trace of top leads; zero is normal (no key, budget reached, nothing due for refresh).",
+    ),
 }
 
 

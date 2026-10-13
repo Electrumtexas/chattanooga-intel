@@ -1,0 +1,133 @@
+name: Dev skip trace (manual)
+
+# Manual, small-batch skip trace through the DealMachine API for testing the
+# module end to end on a real runner. Runs scraper/skip_trace.py against the
+# committed DB, writes results ONLY into the encrypted store
+# data/contacts.db.enc, and commits that one file back.
+#
+# This repo and its Actions logs are PUBLIC: skip_trace.py prints counts and
+# credit usage only — never names, phones or emails — and this workflow never
+# echoes, uploads or caches anything else. The plaintext temp file
+# data/contacts.db is deleted by the script in a finally block; the guard step
+# below fails the job if it ever survived, before anything is staged.
+#
+# Secrets: DEALMACHINE_API_KEY (API key) and CONTACTS_KEY (Fernet key). If
+# either is missing the script prints "skipped: no key" and exits 0.
+
+"on":
+  workflow_dispatch:
+    inputs:
+      max:
+        description: "Max parcels to trace this run (each costs ~1 property credit + 1 per owner contact)"
+        required: false
+        default: "3"
+      max_credits:
+        description: "Credit budget for this run"
+        required: false
+        default: "20"
+      dry_run:
+        description: "1 = select and count candidates only (no API calls)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+# Same group as the daily scrape.yml job: both rewrite data/contacts.db.enc, and
+# two encrypted blobs from different checkouts cannot be merged by git.
+concurrency:
+  group: skiptrace-store
+  cancel-in-progress: false
+
+jobs:
+  skiptrace:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r scraper/requirements.txt
+
+      - name: Remove stale plaintext contact files
+        run: rm -f data/contacts.db data/contacts.db-* data/contacts.db.enc.tmp
+
+      - name: Skip trace (counts and credits only in this log)
+        id: trace
+        working-directory: scraper
+        env:
+          DEALMACHINE_API_KEY: ${{ secrets.DEALMACHINE_API_KEY }}
+          CONTACTS_KEY: ${{ secrets.CONTACTS_KEY }}
+          SKIPTRACE_MAX_PER_RUN: ${{ github.event.inputs.max || '3' }}
+          SKIPTRACE_MAX_CREDITS_PER_RUN: ${{ github.event.inputs.max_credits || '20' }}
+          SKIPTRACE_DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
+          SKIPTRACE_MIN_REMAINING_CREDITS: "100"
+          SKIPTRACE_MAX_CREDITS_PER_DAY: "150"
+          SKIPTRACE_BATCH_SIZE: "5"
+          SKIPTRACE_REFRESH_DAYS: "180"
+        run: python skip_trace.py
+        # A failed run can still have stored (and encrypted) paid results
+        # before failing — the commit step below runs regardless.
+        continue-on-error: true
+
+      - name: Guard — no plaintext contact file may exist
+        if: always()
+        run: |
+          if ls data/contacts.db data/contacts.db-* data/contacts.db.enc.tmp 2>/dev/null | grep -q .; then
+            echo "::error::plaintext contact store present — refusing to continue"
+            rm -f data/contacts.db data/contacts.db-* data/contacts.db.enc.tmp
+            exit 1
+          fi
+
+      - name: Commit encrypted contact store if changed
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # skip_trace.py also writes scrape_log (and optionally parcels.skip_traced_at)
+          # into data/chattanooga.db. A dev run's only result is the encrypted store, so
+          # discard that change: an unstaged tracked change makes every `git rebase`
+          # below abort and would lose the paid results.
+          git checkout -- data/chattanooga.db 2>/dev/null || true
+          # Only the encrypted store — never chattanooga.db or anything else from a dev run.
+          if [ -f data/contacts.db.enc ]; then git add data/contacts.db.enc; fi
+          if git diff --staged --quiet; then
+            echo "contact store unchanged"
+            exit 0
+          fi
+          git commit -m "Dev skip trace $(date -u +%Y-%m-%dT%H:%M:%SZ) (encrypted store)"
+          # Retry-on-push-race pattern as in scrape.yml. data/contacts.db.enc is a
+          # randomized Fernet blob that git cannot merge; the shared concurrency group
+          # 'skiptrace-store' (also on scrape.yml) keeps two writers from interleaving,
+          # so an upstream change to it is unreachable. If it happens anyway we stop
+          # loudly rather than let a rebase choose a side and drop paid contacts.
+          for attempt in 1 2 3 4 5; do
+            if git push; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt) — fetching and rebasing"
+            git fetch origin master
+            base=$(git merge-base HEAD origin/master)
+            if ! git diff --quiet "$base" origin/master -- data/contacts.db.enc; then
+              echo "::error::data/contacts.db.enc changed upstream since this run started - cannot merge encrypted stores; this run's contacts are NOT pushed"
+              exit 1
+            fi
+            if ! git rebase origin/master; then
+              git rebase --abort || true
+              echo "::error::rebase conflict - aborted"
+              exit 1
+            fi
+          done
+          echo "::error::git push failed after 5 rebase-and-retry attempts"
+          exit 1
+
+      - name: Surface a failed trace
+        if: steps.trace.outcome == 'failure'
+        run: |
+          echo "::error::skip_trace.py exited non-zero — see its counts-only output above"
+          exit 1

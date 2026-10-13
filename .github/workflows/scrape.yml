@@ -11,6 +11,14 @@ permissions:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    # Same group as dev_skiptrace.yml: both can rewrite data/contacts.db.enc, and
+    # two Fernet blobs from different checkouts cannot be merged by git (binary,
+    # randomized ciphertext) - a stale one would silently drop paid contacts. The
+    # group makes them take turns (a queued daily run just waits for a dev run;
+    # GitHub keeps one running + one pending per group, which is enough here).
+    concurrency:
+      group: skiptrace-store
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -146,11 +154,82 @@ jobs:
           exit 1
 
       # Publish the freshly generated dashboard (index.html + the JSON that
-      # build_unified.py just wrote). Runs every successful run: scores shift
+      # build_unified.py just wrote). Uploaded BEFORE the skip-trace steps (they never write dashboard/), so
+      # a skip-trace failure can never block the deploy. Runs every run: scores shift
       # daily with the time-decay "as of" date even when no source changed.
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dashboard/
+
+      # DealMachine skip trace of the top new leads. Runs after the daily
+      # commit so ranking uses today's enriched data, and after the Pages
+      # artifact upload above, so a skip-trace failure can never block the
+      # day's data or the deploy. Off until the repo variable
+      # SKIPTRACE_ENABLED is 'true' (set it after the dev_skiptrace.yml test
+      # run confirms the APN format). Contacts go ONLY into the encrypted
+      # data/contacts.db.enc; this public log shows counts and credits only.
+      - name: Remove stale plaintext contact files
+        if: vars.SKIPTRACE_ENABLED == 'true'
+        run: rm -f data/contacts.db data/contacts.db-* data/contacts.db.enc.tmp
+
+      - name: Skip trace top leads (DealMachine — counts-only log)
+        if: vars.SKIPTRACE_ENABLED == 'true'
+        working-directory: scraper
+        env:
+          DEALMACHINE_API_KEY: ${{ secrets.DEALMACHINE_API_KEY }}
+          CONTACTS_KEY: ${{ secrets.CONTACTS_KEY }}
+          SKIPTRACE_MAX_PER_RUN: "25"
+          SKIPTRACE_MAX_CREDITS_PER_RUN: "100"
+          SKIPTRACE_MAX_CREDITS_PER_DAY: "150"
+          SKIPTRACE_BATCH_SIZE: "5"
+          SKIPTRACE_MIN_REMAINING_CREDITS: "500"
+          SKIPTRACE_REFRESH_DAYS: "180"
+        run: python skip_trace.py
+        continue-on-error: true
+        timeout-minutes: 20
+
+      # continue-on-error: a failure here (plaintext guard, push race, binary
+      # rebase conflict) still shows red on the step but cannot fail the job -
+      # the Pages artifact was already uploaded above, so deploy always runs.
+      - name: Commit encrypted contact store
+        if: vars.SKIPTRACE_ENABLED == 'true'
+        continue-on-error: true
+        run: |
+          if ls data/contacts.db data/contacts.db-* data/contacts.db.enc.tmp 2>/dev/null | grep -q .; then
+            echo "::error::plaintext contact store present"
+            rm -f data/contacts.db data/contacts.db-* data/contacts.db.enc.tmp
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Stage each path on its own: one missing pathspec makes `git add` stage nothing.
+          git add data/chattanooga.db || true
+          if [ -f data/contacts.db.enc ]; then git add data/contacts.db.enc; fi
+          if git diff --staged --quiet; then exit 0; fi
+          git commit -m "Automated skip trace $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # Both files above are staged and now committed, so the tree is clean
+          # for the rebase below (a dirty tree would abort every retry).
+          for attempt in 1 2 3 4 5; do
+            if git push; then exit 0; fi
+            echo "push rejected (attempt $attempt) — fetching and rebasing"
+            git fetch origin master
+            # data/contacts.db.enc is a randomized Fernet blob: git cannot merge two
+            # versions, and re-merging needs the plaintext, which is gone. The shared
+            # concurrency group makes this unreachable; if it happens anyway, stop
+            # loudly instead of letting a rebase pick a side and lose contacts.
+            base=$(git merge-base HEAD origin/master)
+            if ! git diff --quiet "$base" origin/master -- data/contacts.db.enc; then
+              echo "::error::data/contacts.db.enc changed upstream since this run started - cannot merge encrypted stores; this run's contacts are NOT pushed (re-run skip trace after resolving)"
+              exit 1
+            fi
+            if ! git rebase origin/master; then
+              git rebase --abort || true
+              echo "::error::rebase conflict (not on data/contacts.db.enc) - aborted"
+              exit 1
+            fi
+          done
+          echo "::error::git push failed after 5 rebase-and-retry attempts"
+          exit 1
 
   deploy:
     needs: scrape

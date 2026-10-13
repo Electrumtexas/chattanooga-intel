@@ -148,7 +148,8 @@ CREATE INDEX IF NOT EXISTS idx_scrape_log_source_run ON scrape_log(source, run_a
 # Columns added after the first release. CREATE TABLE IF NOT EXISTS won't add
 # them to an existing database file, so get_connection() adds any missing ones.
 ADDED_COLUMNS = {
-    "parcels": {"tax_map_no": "TEXT", "land_use": "TEXT", "appraised_value": "REAL"},
+    "parcels": {"tax_map_no": "TEXT", "land_use": "TEXT", "appraised_value": "REAL",
+                "skip_traced_at": "TEXT", "skip_trace_status": "TEXT"},  # no contact data — that lives only in data/contacts.db.enc
     "court_records": {"description": "TEXT"},
     # Set (to a date) when a full-snapshot source stops listing a row; cleared if it reappears.
     # See reconcile_snapshot().
