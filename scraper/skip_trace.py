@@ -578,6 +578,19 @@ def _surely_not_sent(exc: BaseException) -> bool:
     return False
 
 
+def _shape(obj, depth: int = 0) -> str:
+    """Structure only: key names, list lengths and value TYPES — never a value
+    (a response holds names/phones/emails and this goes to a public log).
+    Debug aid behind SKIPTRACE_DEBUG_SHAPE=1."""
+    if depth > 4:
+        return "..."
+    if isinstance(obj, dict):
+        return "{" + ",".join(f"{k}:{_shape(v, depth + 1)}" for k, v in list(obj.items())[:40]) + "}"
+    if isinstance(obj, list):
+        return f"[{len(obj)}x " + (_shape(obj[0], depth + 1) if obj else "empty") + "]"
+    return type(obj).__name__
+
+
 class DealMachineClient:
     def __init__(self, api_key: str, cfg: Config, session=None, sleep=time.sleep):
         if session is None:
@@ -645,6 +658,8 @@ class DealMachineClient:
             if 200 <= status < 300:
                 body = resp.json()  # parse FIRST — a paid body is never discarded over a header
                 self._check_rate_headers(resp)
+                if os.environ.get("SKIPTRACE_DEBUG_SHAPE") == "1" and method == "POST":
+                    out("shape: " + _shape(body))
                 return body
             code = self._error_code(resp)
             out(f"HTTP {status} {code}")

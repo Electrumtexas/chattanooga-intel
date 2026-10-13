@@ -71,6 +71,7 @@ jobs:
           SKIPTRACE_MAX_CREDITS_PER_RUN: ${{ github.event.inputs.max_credits || '20' }}
           SKIPTRACE_DRY_RUN: ${{ github.event.inputs.dry_run || '0' }}
           SKIPTRACE_MIN_REMAINING_CREDITS: "100"
+          SKIPTRACE_DEBUG_SHAPE: "1"  # structure-only response logging (no values) while verifying the contact fields
           SKIPTRACE_MAX_CREDITS_PER_DAY: "150"
           SKIPTRACE_BATCH_SIZE: "5"
           SKIPTRACE_REFRESH_DAYS: ${{ github.event.inputs.refresh_days || '180' }}
